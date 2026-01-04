@@ -1,29 +1,40 @@
+import os
 import subprocess
 import sys
 
 import happybase
+from common import config
 
-HDFS_OUTPUT_PATH = '/user/ie212/movielens/output_average_ratings/*'
 
 def read_hdfs_stream():
+    hdfs_path = f"{config.HDFS_OUTPUT_AVG}/*"
+    
+    print(f"Dang doc stream tu HDFS: {hdfs_path}")
+    
+    # Gọi lệnh shell: hdfs dfs -cat ...
     cat_process = subprocess.Popen(
-        ['hdfs', 'dfs', '-cat', HDFS_OUTPUT_PATH],
+        ['hdfs', 'dfs', '-cat', hdfs_path],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
     
+    # Đọc stream output
     for line in cat_process.stdout:
         yield line.decode('utf-8').strip()
 
 def main():
-    connection = happybase.Connection('localhost')
-    table = connection.table('movies')
-    print(f"Dang ket noi HBase va doc du lieu tu: {HDFS_OUTPUT_PATH}")
-
+    print(f"Dang ket noi HBase voi {config.HBASE_HOST}...")
+    connection = happybase.Connection(config.HBASE_HOST)
+    
+    table_name = config.HBASE_TABLE_MOVIES
+    table = connection.table(table_name)
+    
     batch = table.batch()
     count = 0
     
-    print("Bat dau cap nhat Rating vao HBase...")
+    print(f"Bat dau cap nhat Rating vao bang '{table_name}'...")
+    
+    cf_stats = config.HBASE_CF_STATS
     
     for line in read_hdfs_stream():
         if not line: continue
@@ -35,8 +46,11 @@ def main():
             movie_id = parts[0]
             avg_rating = parts[1]
             
+            col_name = cf_stats + b':avg_rating'
+            
+            # Update vào HBase
             batch.put(movie_id.encode('utf-8'), {
-                b'stats:avg_rating': avg_rating.encode('utf-8')
+                col_name: avg_rating.encode('utf-8')
             })
             
             count += 1
