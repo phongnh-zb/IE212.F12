@@ -94,7 +94,12 @@ class HybridRecommender:
             .otherwise(col("prediction"))
         )
 
-        return combined.select("userId", "movieId", "rating", "prediction")
+        # Defensive column selection
+        available_cols = combined.columns
+        target_cols = ["userId", "movieId", "rating", "prediction"]
+        select_cols = [c for c in target_cols if c in available_cols]
+
+        return combined.select(*select_cols)
 
     def set_weights(self, alpha, beta):
         if abs(alpha + beta - 1.0) > 0.01:
