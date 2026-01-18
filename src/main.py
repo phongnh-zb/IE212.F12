@@ -1,3 +1,8 @@
+import os
+
+# Set JAVA_HOME to the conda environment path
+os.environ['JAVA_HOME'] = '/home/dat-vu/anaconda3/envs/bigdata'
+
 from pyspark.sql import SparkSession
 from models import ALSRecommender, ContentBasedRecommender, HybridRecommender, ModelComparator
 
@@ -6,6 +11,7 @@ def create_spark_session():
     return SparkSession.builder \
         .appName("Movie_recommender") \
         .master("local[*]") \
+        .config("spark.driver.host", "localhost") \
         .getOrCreate()
 def load_data(spark, data_path="./data"):
     rating = spark.read.csv(f"{data_path}/ratings.csv", header=True, inferSchema=True)

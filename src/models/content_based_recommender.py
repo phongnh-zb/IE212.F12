@@ -15,18 +15,19 @@ class ContentBasedRecommender:
 
     def train(self, movies_df, tag_df=None):
         self.movie_df = movies_df
+        clean_genres_udf = udf(lambda x: x.replace("|", " ") if x else "", StringType())
 
         movies_processed = movies_df.withColumn(
             "genres_text",
             concat_ws(" ", col("genres"))
         ).withColumn(
             "genres_clean",
-            udf(lambda x: x.replace("|", " ") if x else "")(col("genres")),
+            clean_genres_udf(col("genres")),
         )
 
         if tag_df is not None:
             tags_agg = tag_df.groupBy("movieId").agg(
-                concat_ws(" ", collect_list("tags")).alias("tags_text")
+                concat_ws(" ", collect_list("tag")).alias("tags_text")
             )
             movies_processed = movies_processed.join(tags_agg, "movieId", "left")
             movies_processed = movies_processed.withColumn(
@@ -68,12 +69,12 @@ class ContentBasedRecommender:
         if not target:
             return None
 
-        target_vec = target["features"].toarray()
+        target_vec = target["features"].toArray()
 
         def cosine_sim(features):
             if features is None:
                 return 0.0
-            vec = features.toarray()
+            vec = features.toArray()
             dot = float(np.dot(target_vec, vec))
             norm = float(np.linalg.norm(target_vec) * np.linalg.norm(vec))
             return dot / norm if norm > 0 else 0.0
@@ -102,7 +103,13 @@ class ContentBasedRecommender:
                                                     ).select("features").collect()
 
         if not liked_features:
-            return self.spark.createDataFrame([], "userId INT, movieId INT, score DOUBLE")
+            from pyspark.sql.types import StructType, StructField, IntegerType, DoubleType as DT
+            schema = StructType([
+                StructField("userId", IntegerType(), True),
+                StructField("movieId", IntegerType(), True),
+                StructField("score", DT(), True)
+            ])
+            return self.spark.createDataFrame([], schema)
 
         vectors = [row.features.toArray() for row in liked_features]
         user_profile = np.mean(vectors, axis=0)
@@ -110,7 +117,7 @@ class ContentBasedRecommender:
         def profile_similarity(features):
             if features is None:
                 return 0.0
-            vec = features.toarray()
+            vec = features.toArray()
             dot = float(np.dot(user_profile, vec))
             norm = float(np.linalg.norm(user_profile) * np.linalg.norm(vec))
             return dot / norm if norm > 0 else 0.0
@@ -141,15 +148,16 @@ class ContentBasedRecommender:
                     vectors = [row.features.toArray() for row in liked_features]
                     user_profiles[user_id] = np.mean(vectors, axis=0)
 
-        def predict_rating(user_id, movie_id):
-            if user_id not in user_profiles:
+        # Broadcast user profiles for efficiency and to avoid serialization issues
+        broadcast_profiles = self.spark.sparkContext.broadcast(user_profiles)
+
+        def predict_rating(user_id, movie_features_vec):
+            profiles = broadcast_profiles.value
+            if user_id not in profiles or movie_features_vec is None:
                 return 3.0
 
-            movie_row = self.movie_features.filter(col("movieId") == movie_id).first()
-            if not movie_row:
-                return 3.0
-            user_vec = user_profiles[user_id]
-            movie_vec = movie_row.features.toArray()
+            user_vec = profiles[user_id]
+            movie_vec = movie_features_vec.toArray()
 
             dot = float(np.dot(user_vec, movie_vec))
             norm = float(np.linalg.norm(user_vec) * np.linalg.norm(movie_vec))
@@ -157,8 +165,14 @@ class ContentBasedRecommender:
             return 0.5 + similarity * 4.5
 
         predict_udf = udf(predict_rating, DoubleType())
-        predictions = test_data.withColumn(
+
+        # Join test_data with movie_features to get relevant features for UDF
+        predictions = test_data.join(
+            self.movie_features.select("movieId", col("features").alias("movie_features_vec")),
+            "movieId",
+            "left"
+        ).withColumn(
             "prediction",
-            predict_udf(col("userId"), col("movieId"))
-        )
+            predict_udf(col("userId"), col("movie_features_vec"))
+        ).select("userId", "movieId", "rating", "prediction")
         return predictions
