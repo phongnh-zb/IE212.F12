@@ -16,6 +16,10 @@ HDFS_OUTPUT_GENRES = f"{HDFS_BASE_PATH}output_genre_counts"
 # HBASE
 HBASE_HOST = 'localhost'
 HBASE_TABLE_MOVIES = 'movies'
+HBASE_TABLE_MOVIES = 'movies'
+HBASE_TABLE_RATINGS = 'ratings'
+HBASE_TABLE_TAGS = 'tags'
+
 HBASE_CF_INFO = b'info'  
 HBASE_CF_STATS = b'stats'
 
