@@ -54,35 +54,10 @@ def main():
     comparator.evaluate(hybrid_predictions, hybrid_model.name)
 
     comparison_df = comparator.compare_all()
-
-    # ================ DEMO ==================
-    demo_user = 1
     print("\n" + "=" * 60)
-    print(f"DEMO for user: {demo_user}")
+    print("FINAL MODEL COMPARISON SUMMARY")
     print("=" * 60)
-
-    print(f"\n --- ALS Recommendations ---")
-    als_recs = als_model.recommend_for_user(demo_user, 5)
-    als_recs.join(movies, "movieId").select("movieId", "title", "genres", "score").show()
-
-    print(f"\n --- Content-based Recommendations ---")
-    cbf_recs = cbf_model.recommend_for_user(demo_user, ratings, 5)
-    cbf_recs.join(movies, "movieId").select("movieId", "title", "genres", "score").show()
-
-    print(f"\n --- Hybrid Recommendations ---")
-    hybrid_recs = hybrid_model.recommend_for_user(demo_user, ratings, movies, 5)
-    hybrid_recs.show()
-
-
-    # ============ SIMILAR MOVIE ============
-    demo_movie = 1
-    print("\n" + "=" * 60)
-    print(f"DEMO Movies similar to movie id: {demo_movie}")
-    print("=" * 60)
-
-    similar = cbf_model.find_similar_movies(demo_movie, 5)
-    if similar:
-        similar.show()
+    print(comparison_df)
 
     spark.stop()
 
