@@ -13,8 +13,23 @@ import altair as alt
 from models import ALSRecommender, ContentBasedRecommender, HybridRecommender, ModelComparator
 from utils.hbase_utils import get_all_data_from_hbase
 
-# Page config
 st.set_page_config(page_title="Movie Recommendation System", layout="wide")
+
+def load_from_csv(spark, data_path="./data"):
+    rating = spark.read.csv(f"{data_path}/ratings.csv", header=True, inferSchema=True)
+    movies = spark.read.csv(f"{data_path}/movies.csv", header=True, inferSchema=True)
+    tags = spark.read.csv(f"{data_path}/tags.csv", header=True, inferSchema=True)
+    return rating, movies, tags
+
+def load_data(spark):
+    try:
+        ratings, movies, tags = get_all_data_from_hbase(spark)
+        print("read data from HBase")
+
+        return ratings, movies, tags
+    except Exception as e:
+        print("read data from csv")
+        return load_from_csv(spark)
 
 @st.cache_resource
 def get_spark_and_models():
@@ -26,7 +41,7 @@ def get_spark_and_models():
         .getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
 
-    ratings, movies, tags = get_all_data_from_hbase(spark)
+    ratings, movies, tags = load_data(spark)
     ratings.cache()
     movies.cache()
     tags.cache()

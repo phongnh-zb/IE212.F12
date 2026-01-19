@@ -30,7 +30,7 @@ def load_hbase_table(spark: SparkSession, table_name: str, columns: list, column
         return df
     except Exception as e:
         print(f"Error loading from HBase table {table_name}: {e}")
-        return spark.createDataFrame([], schema=", ".join([f"{c} string" for c in columns]))
+        raise e
 
 def get_all_data_from_hbase(spark: SparkSession):
     ratings_raw = load_hbase_table(spark, 'ratings', ['userId', 'movieId', 'rating'])

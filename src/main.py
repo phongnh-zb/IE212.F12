@@ -1,5 +1,10 @@
+import sys
+import os
+sys.path.append(os.path.join(os.getcwd(), 'src'))
+
 from pyspark.sql import SparkSession
 from models import ALSRecommender, ContentBasedRecommender, HybridRecommender, ModelComparator
+from utils.hbase_utils import get_all_data_from_hbase
 
 
 def create_spark_session():
@@ -9,17 +14,27 @@ def create_spark_session():
         .config("spark.driver.host", "localhost") \
         .getOrCreate()
 
-import sys
-import os
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+def load_from_csv(spark, data_path="./data"):
+    rating = spark.read.csv(f"{data_path}/ratings.csv", header=True, inferSchema=True)
+    movies = spark.read.csv(f"{data_path}/movies.csv", header=True, inferSchema=True)
+    tags = spark.read.csv(f"{data_path}/tags.csv", header=True, inferSchema=True)
+    return rating, movies, tags
 
-from utils.hbase_utils import get_all_data_from_hbase
+def load_data(spark):
+    try:
+        ratings, movies, tags = get_all_data_from_hbase(spark)
+        print("read data from HBase")
+
+        return ratings, movies, tags
+    except Exception as e:
+        print("read data from csv")
+        return load_from_csv(spark)
 
 def main():
     spark = create_spark_session()
     spark.sparkContext.setLogLevel("ERROR")
 
-    ratings, movies, tags = get_all_data_from_hbase(spark)
+    ratings, movies, tags = load_data(spark)
     train_data, test_data = ratings.randomSplit([.8, .2], seed=42)
     
     comparator = ModelComparator(spark)
