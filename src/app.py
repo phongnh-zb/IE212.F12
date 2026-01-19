@@ -16,9 +16,6 @@ from models import ALSRecommender, ContentBasedRecommender, HybridRecommender, M
 # Page config
 st.set_page_config(page_title="Movie Recommendation System", layout="wide")
 
-# Set JAVA_HOME
-os.environ['JAVA_HOME'] = '/home/dat-vu/anaconda3/envs/bigdata'
-
 @st.cache_resource
 def get_spark_and_models():
     spark = SparkSession.builder \

@@ -1,8 +1,3 @@
-import os
-
-# Set JAVA_HOME to the conda environment path
-os.environ['JAVA_HOME'] = '/home/dat-vu/anaconda3/envs/bigdata'
-
 from pyspark.sql import SparkSession
 from models import ALSRecommender, ContentBasedRecommender, HybridRecommender, ModelComparator
 
