@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import sys
 
-# Add src to path so we can import models
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 import pandas as pd
@@ -12,6 +11,7 @@ from pyspark.sql.functions import col
 from pyspark.sql.types import IntegerType, StructType, StructField
 import altair as alt
 from models import ALSRecommender, ContentBasedRecommender, HybridRecommender, ModelComparator
+from utils.hbase_utils import get_all_data_from_hbase
 
 # Page config
 st.set_page_config(page_title="Movie Recommendation System", layout="wide")
@@ -26,15 +26,13 @@ def get_spark_and_models():
         .getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
 
-    # Load data
-    data_path = "./data"
-    ratings = spark.read.csv(f"{data_path}/ratings.csv", header=True, inferSchema=True).cache()
-    movies = spark.read.csv(f"{data_path}/movies.csv", header=True, inferSchema=True).cache()
-    tags = spark.read.csv(f"{data_path}/tags.csv", header=True, inferSchema=True).cache()
+    ratings, movies, tags = get_all_data_from_hbase(spark)
+    ratings.cache()
+    movies.cache()
+    tags.cache()
 
     train_data, test_data = ratings.randomSplit([.8, .2], seed=42)
     
-    # Train Models
     comparator = ModelComparator(spark)
     
     # ALS
@@ -43,26 +41,20 @@ def get_spark_and_models():
     als_preds = als_model.predict(test_data)
     comparator.evaluate(als_preds, "ALS")
     
-    # Content-Based
     cbf_model = ContentBasedRecommender(spark)
     cbf_model.train(movies, tags)
-    # Pre-build user profiles for demo users or a subset for performance
-    # For now, let's build for a few users or build on demand
     cbf_preds = cbf_model.predict(test_data, train_data)
     comparator.evaluate(cbf_preds, "Content-Based")
     
-    # Hybrid
     hybrid_model = HybridRecommender(spark, als_model, cbf_model, alpha=0.7, beta=0.3)
     hybrid_preds = hybrid_model.predict(test_data, train_data)
     comparator.evaluate(hybrid_preds, "Hybrid")
     
     return spark, ratings, movies, als_model, cbf_model, hybrid_model, comparator
 
-# Load everything
 with st.spinner("Initializing Spark and training models... this may take a minute"):
     spark, ratings, movies, als_model, cbf_model, hybrid_model, comparator = get_spark_and_models()
 
-# Sidebar
 st.sidebar.title("🎬 Recommender")
 page = st.sidebar.radio("Go to", ["Recommendations", "Model Comparison"])
 
@@ -91,8 +83,7 @@ if page == "Recommendations":
             else:
                 recs = hybrid_model.recommend_for_user(user_id, ratings, movies, top_n)
             
-            # Join with movies to get details
-            if model_type != "Hybrid": # Hybrid already joins
+            if model_type != "Hybrid":
                 recs_df = recs.join(movies, "movieId").select("movieId", "title", "genres", col("score").alias("predicted_rating")).toPandas()
             else:
                 recs_df = recs.select("movieId", "title", "genres", "score").toPandas()
@@ -121,7 +112,6 @@ if page == "Recommendations":
             else:
                 with st.spinner("Predicting..."):
                     try:
-                        # Define schema explicitly to avoid BIGINT overflow in ALS
                         schema = StructType([
                             StructField("userId", IntegerType(), False),
                             StructField("movieId", IntegerType(), False)
@@ -152,18 +142,13 @@ else: # Model Comparison
         df_results = pd.DataFrame(results).T
         st.table(df_results)
         
-        # Custom Bar Chart with Altair
         st.subheader("RMSE Comparison (Bar)")
         
-        # Prepare data for Altair
         chart_data = df_results.reset_index().rename(columns={'index': 'Model'})
         
-        # Define color scale: Red, Green, Yellow
-        # We'll map them to the models found in the data
-        # Order: ALS, Content-Based, Hybrid
         color_scale = alt.Scale(
             domain=['ALS', 'Content-Based', 'Hybrid'],
-            range=['#2ecc71', '#e74c3c', '#f1c40f'] # Green, Red, Yellow
+            range=['#2ecc71', '#e74c3c', '#f1c40f']
         )
         
         bar_chart = alt.Chart(chart_data).mark_bar().encode(
