@@ -16,10 +16,14 @@ read -p "Chọn chế độ (1/2/3/4): " choice
 
 case $choice in
     1)
+        ./scripts/start_services.sh
         ./scripts/run_mapreduce.sh
         ./scripts/run_hbase.sh
         ;;
     2)
+        ./scripts/start_services.sh
+        ;;
+    3)
         ./scripts/run_mapreduce.sh
         ;;
     3)
