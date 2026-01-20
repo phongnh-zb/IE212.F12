@@ -6,12 +6,6 @@ source "$(dirname "$0")/config.sh"
 
 log_info ">>> BẮT ĐẦU QUY TRÌNH HBASE..."
 
-# 1. Restart Thrift
-log_info "Restarting HBase Thrift Server..."
-hbase-daemon.sh stop thrift || true
-sleep 2
-hbase-daemon.sh start thrift
-
 # 2. Re-create Tables (Sử dụng Ruby begin/rescue để tránh lỗi)
 # Cơ chế: Cố gắng disable và drop. Nếu bảng chưa có (gặp lỗi) -> bỏ qua (rescue) và chạy tiếp lệnh create.
 
@@ -43,6 +37,16 @@ hbase shell -n <<EOF
   rescue
   end
   create 'tags', 'info'
+EOF
+
+log_info "Re-creating table 'recommendations'..."
+hbase shell -n <<EOF
+  begin
+    disable 'recommendations'
+    drop 'recommendations'
+  rescue
+  end
+  create 'recommendations', 'info'
 EOF
 
 # 3. Load Data

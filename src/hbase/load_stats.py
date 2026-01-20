@@ -7,62 +7,59 @@ from common import config
 
 
 def read_hdfs_stream():
+    # Đường dẫn output của MapReduce
     hdfs_path = f"{config.HDFS_OUTPUT_AVG}/*"
-    
     print(f"Dang doc stream tu HDFS: {hdfs_path}")
     
-    # Gọi lệnh shell: hdfs dfs -cat ...
-    cat_process = subprocess.Popen(
+    process = subprocess.Popen(
         ['hdfs', 'dfs', '-cat', hdfs_path],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
     
-    # Đọc stream output
-    for line in cat_process.stdout:
+    for line in process.stdout:
         yield line.decode('utf-8').strip()
 
 def main():
     print(f"Dang ket noi HBase voi {config.HBASE_HOST}...")
-    connection = happybase.Connection(config.HBASE_HOST)
+    # Thêm timeout và autoconnect để kết nối ổn định hơn
+    connection = happybase.Connection(config.HBASE_HOST, timeout=60000, autoconnect=True)
+    table = connection.table(config.HBASE_TABLE_MOVIES)
     
-    table_name = config.HBASE_TABLE_MOVIES
-    table = connection.table(table_name)
+    print(f"Bat dau cap nhat Rating vao bang '{config.HBASE_TABLE_MOVIES}'...")
     
-    batch = table.batch()
     count = 0
-    
-    print(f"Bat dau cap nhat Rating vao bang '{table_name}'...")
-    
-    cf_stats = config.HBASE_CF_STATS
-    
-    for line in read_hdfs_stream():
-        if not line: continue
-        
-        try:
-            parts = line.split('\t')
-            if len(parts) != 2: continue
-            
-            movie_id = parts[0]
-            avg_rating = parts[1]
-            
-            col_name = cf_stats + b':avg_rating'
-            
-            # Update vào HBase
-            batch.put(movie_id.encode('utf-8'), {
-                col_name: avg_rating.encode('utf-8')
-            })
-            
-            count += 1
-            if count % 1000 == 0:
-                print(f"Da cap nhat {count} phim...")
+    try:
+        with table.batch(batch_size=1000) as batch:
+            for line in read_hdfs_stream():
+                if not line: continue
                 
-        except Exception as e:
-            print(f"Loi dong: {line} - {e}")
+                try:
+                    # Parse dữ liệu: movieID \t avg_rating
+                    parts = line.split('\t')
+                    if len(parts) != 2: continue
+                    
+                    movie_id = parts[0]
+                    avg_rating = parts[1]
+                    
+                    # Tạo tên cột: stats:avg_rating
+                    col_name = b'stats' + b':avg_rating'
+                    
+                    batch.put(movie_id.encode('utf-8'), {
+                        col_name: avg_rating.encode('utf-8')
+                    })
+                    
+                    count += 1
+                    if count % 1000 == 0:
+                        print(f"Da cap nhat {count} phim...")
+                except Exception as e:
+                    print(f"Loi xu ly dong: {line} - {e}")
+    except Exception as e:
+        print(f"!!! Lỗi khi ghi vào HBase: {e}")
+    finally:
+        connection.close()
 
-    batch.send()
-    connection.close()
-    print(f"THANH CONG! Da cap nhat diem rating cho {count} phim.")
+    print(f"HOAN TAT! Da cap nhat diem rating cho {count} phim.")
 
 if __name__ == "__main__":
     main()

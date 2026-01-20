@@ -14,17 +14,19 @@ HDFS_OUTPUT_AVG = f"{HDFS_BASE_PATH}output_average_ratings"
 HDFS_OUTPUT_GENRES = f"{HDFS_BASE_PATH}output_genre_counts"
 
 # HBASE
-HBASE_HOST = 'localhost'
+HBASE_HOST = '127.0.0.1'
 HBASE_TABLE_MOVIES = 'movies'
 HBASE_TABLE_MOVIES = 'movies'
 HBASE_TABLE_RATINGS = 'ratings'
 HBASE_TABLE_TAGS = 'tags'
-
-HBASE_CF_INFO = b'info'  
-HBASE_CF_STATS = b'stats'
+HBASE_TABLE_RECS = 'recommendations'
 
 # FILES (CSV)
 LINKS_FILE = "links.csv"
 MOVIES_FILE = "movies.csv"
 RATINGS_FILE = "ratings.csv"
 TAGS_FILE = "tags.csv"
+
+# SPARK CONFIGS
+SPARK_APP_NAME = "MovieLens_ALS_Training"
+SPARK_MASTER = "local[*]"
