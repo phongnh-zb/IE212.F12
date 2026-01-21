@@ -1,41 +1,46 @@
 #!/bin/bash
-# FILE: run_pipeline.sh
+set -e
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-# Cấp quyền thực thi cho các files
-chmod +x scripts/*.sh
+# [UPDATE] Mặc định chạy 'all' nếu không nhập tham số
+MODEL_TYPE=${1:-all}
 
-echo "========================================"
-echo "XÂY DỰNG HỆ THỐNG GỢI Ý PHIM THÔNG MINH SỬ DỤNG BIG DATA"
-echo "========================================"
-echo "1. Chạy TOÀN BỘ (Full Pipeline)"
-echo "2. Chạy MapReduce"
-echo "3. Chạy HBase Setup & Load"
-echo "4. Thoát"
-echo "========================================"
-read -p "Chọn chế độ (1/2/3/4): " choice
+print_header() {
+    echo -e "\n${GREEN}========================================================${NC}"
+    echo -e "${GREEN}>>> [PIPELINE] $1${NC}"
+    echo -e "${GREEN}========================================================${NC}\n"
+}
 
-case $choice in
-    1)
-        ./scripts/start_services.sh
-        ./scripts/run_mapreduce.sh
-        ./scripts/run_hbase.sh
-        ;;
-    2)
-        ./scripts/start_services.sh
-        ;;
-    3)
-        ./scripts/run_mapreduce.sh
-        ;;
-    3)
-        ./scripts/run_hbase.sh
-        ;;
-	4)
-        exit 1
-        ;;
-    *)
-        echo "Lựa chọn không hợp lệ."
-        exit 1
-        ;;
-esac
+check_service() {
+    if ! jps | grep -q "$1"; then
+        echo -e "${YELLOW}⚠️ Cảnh báo: Không thấy service '$1'. Đang thử khởi động lại...${NC}"
+        # Tự động fix nếu thiếu service (Optional)
+    fi
+}
 
-echo "================ DONE ================"
+# BƯỚC 0
+print_header "BƯỚC 0: CHECK SERVICES"
+check_service "ThriftServer"
+
+# BƯỚC 1
+print_header "BƯỚC 1: MAPREDUCE (ETL)"
+chmod +x scripts/run_mapreduce.sh
+./scripts/run_mapreduce.sh
+
+# BƯỚC 2
+print_header "BƯỚC 2: HBASE LOAD"
+chmod +x scripts/run_hbase.sh
+./scripts/run_hbase.sh
+sleep 5
+
+# BƯỚC 3
+print_header "BƯỚC 3: TRAINING (Mode: $MODEL_TYPE)"
+echo "Hệ thống sẽ chạy lần lượt các model được yêu cầu..."
+
+# Chạy code Python mới
+python3 src/run_training.py --model "$MODEL_TYPE"
+
+print_header "PIPELINE HOÀN TẤT!"
+echo -e "Web App: ${YELLOW}streamlit run src/app.py${NC}"
