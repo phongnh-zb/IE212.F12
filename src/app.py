@@ -84,7 +84,7 @@ def main():
                 # Nút clear cache nếu muốn lấy dữ liệu nóng hổi ngay lập tức
                 if st.button("Xóa Cache"):
                     load_recommendations.clear()
-                    st.experimental_rerun()
+                    st.rerun()
 
             # Chuyển list dict thành DataFrame đẹp
             df = pd.DataFrame(recs)
