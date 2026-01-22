@@ -34,6 +34,12 @@ def load_recommendations(user_id):
     if provider: return provider.get_recommendations(user_id)
     return []
 
+@st.cache_data(ttl=600)
+def load_user_history(user_id):
+    provider = get_provider()
+    if provider: return provider.get_user_history_detailed(user_id)
+    return []
+
 @st.cache_data(ttl=60)
 def load_all_system_data(limit=100):
     provider = get_provider()
@@ -46,7 +52,7 @@ def main():
     st.caption("Nền tảng: Hadoop HDFS + Spark ALS + HBase")
 
     # TABS
-    tab1, tab2 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📊 Dữ Liệu Hệ Thống"])
+    tab1, tab2, tab3 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống"])
 
     # ==========================================
     # TAB 1: USER VIEW (LAYOUT MỚI)
@@ -60,7 +66,7 @@ def main():
         # --- CỘT TRÁI: INPUT ---
         with col_top_left:
             st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất.")
-            user_input = st.text_input("Nhập ID Người Dùng:", value="1")
+            user_input = st.text_input("Nhập ID Người Dùng để xem đề xuất:", value="1")
             
             if user_input and user_input.isdigit():
                 with st.spinner(f"AI đang phân tích sở thích User {user_input}..."):
@@ -218,11 +224,75 @@ def main():
                 chart = (rule + p_community + p_ai).properties(height=400) # Tăng chiều cao để dễ đọc tên phim
 
                 st.altair_chart(chart, use_container_width=True)
-
+            
     # ==========================================
-    # TAB 2: ADMIN VIEW (Giữ nguyên)
+    # TAB 2: LỊCH SỬ ĐÁNH GIÁ (USER HISTORY)
     # ==========================================
     with tab2:
+        col_hist_left, col_hist_right = st.columns([1, 3])
+        
+        with col_hist_left:
+            st.info("Xem lại các phim người dùng đã xem để hiểu 'gu' của họ.")
+            # Input riêng cho Tab này
+            hist_user_input = st.text_input("Nhập ID Người Dùng để xem lịch sử:", value="1")
+            
+            history_data = []
+            if hist_user_input and hist_user_input.isdigit():
+                 with st.spinner("Đang tải lịch sử từ HBase..."):
+                    history_data = load_user_history(hist_user_input)
+            
+            if history_data:
+                # Hiển thị Metrics tổng quan
+                df_hist = pd.DataFrame(history_data)
+                avg_score = df_hist['rating'].mean()
+                total_movies = len(df_hist)
+                
+                st.markdown("### 🌟 Tổng Quan")
+                st.metric("Đã Đánh Giá", f"{total_movies} phim")
+                st.metric("Điểm Trung Bình", f"{avg_score:.1f} / 5.0")
+            elif hist_user_input:
+                st.warning("Người dùng này chưa đánh giá phim nào (hoặc ID không tồn tại).")
+
+        with col_hist_right:
+            st.subheader(f"📋 Danh sách phim đã xem của người dùng")
+
+            if history_data:
+                df_hist = pd.DataFrame(history_data)
+                
+                # 1. BIỂU ĐỒ PHÂN BỐ (Histogram)
+                # Giúp xem User này dễ tính hay khó tính (Chấm toàn 5 hay toàn 1)
+                st.caption("Phân bố điểm số (Người dùng này thường chấm mấy sao?)")
+                hist_chart = alt.Chart(df_hist).mark_bar().encode(
+                    x=alt.X('rating:O', title='Số Sao'), # O là Ordinal (Rời rạc)
+                    y=alt.Y('count()', title='Số lượng phim'),
+                    color=alt.Color('rating:O', scale=alt.Scale(scheme='magma'), legend=None),
+                    tooltip=['rating', 'count()']
+                ).properties(height=200)
+                st.altair_chart(hist_chart, use_container_width=True)
+
+                # 2. BẢNG CHI TIẾT
+                st.dataframe(
+                    df_hist,
+                    column_config={
+                        "movieId": st.column_config.TextColumn("ID", width="small"),
+                        "title": "Tên Phim",
+                        "genres": "Thể Loại",
+                        "rating": st.column_config.NumberColumn(
+                            "Điểm Chấm", 
+                            format="%.1f ⭐",
+                        )
+                    },
+                    use_container_width=True,
+                    height=500, # Cho phép scroll nếu list quá dài
+                    hide_index=True
+                )
+            else:
+                st.info("👈 Nhập User ID để xem dữ liệu.")           
+
+    # ==========================================
+    # TAB 3: ADMIN VIEW (Giữ nguyên)
+    # ==========================================
+    with tab3:
         st.header("📊 Giám Sát Dữ Liệu Trực Tiếp")
         
         col_search, col_btn = st.columns([3, 1], vertical_alignment="bottom")
@@ -272,6 +342,6 @@ def main():
         else:
             load_all_system_data.clear()
             st.info("📭 Hệ thống chưa có dữ liệu. Vui lòng bấm 'Làm Mới Dữ Liệu'.")
-
+            
 if __name__ == "__main__":
     main()

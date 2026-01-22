@@ -6,7 +6,6 @@ from common import config
 
 
 def main():
-    print(f"Connecting to HBase at {config.HBASE_HOST}...")
     connection = happybase.Connection(config.HBASE_HOST)
     table = connection.table(config.HBASE_TABLE_TAGS)
 

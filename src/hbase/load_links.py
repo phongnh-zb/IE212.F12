@@ -6,12 +6,11 @@ from common import config
 
 
 def main():
-    print(f"Connecting to HBase at {config.HBASE_HOST}...")
     connection = happybase.Connection(config.HBASE_HOST)
     table = connection.table(config.HBASE_TABLE_MOVIES)
 
     csv_path = os.path.join(config.DATA_DIR_LOCAL, config.LINKS_FILE)
-    print(f"Reading file: {csv_path}")
+    print(f"Dang doc file tu: {csv_path}")
 
     batch = table.batch()
     count = 0
