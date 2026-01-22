@@ -40,12 +40,24 @@ def save_partition_to_hbase(iterator, table_name, column_family):
         connection = get_conn()
         table = connection.table(table_name)
         batch_data = []
-        
-        # Tên cột: 'info:movieIds'
         col_name = b'info:movieIds'
 
         for row in iterator:
-            rec_data = ",".join([f"{r.movieId}:{r.rating:.2f}" for r in row.recommendations])
+            clean_recs = []
+            
+            for r in row.recommendations:
+                # 1. Lấy giá trị rating thô từ thuật toán
+                raw_rating = float(r.rating)
+                
+                # 2. Ep về 0.0 - 5.0
+                clean_rating = max(0.0, min(5.0, raw_rating))
+                
+                # 3. Format chuỗi "ID:Rating"
+                clean_recs.append(f"{r.movieId}:{clean_rating:.2f}")
+
+            # Nối lại thành chuỗi để lưu HBase
+            # Ví dụ: "1:4.50,296:5.00,..."
+            rec_data = ",".join(clean_recs)
             
             batch_data.append((str(row.userId).encode(), {col_name: rec_data.encode()}))
             

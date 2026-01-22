@@ -134,3 +134,33 @@ class HBaseProvider:
         except Exception as e:
             print(f"!!! [HBase Get Error] {e}")
             return None
+        
+    def get_user_ratings(self, user_id):
+        """
+        Lấy tất cả các phim mà user này đã từng đánh giá.
+        Trả về dictionary: {'movieId': 'rating'}
+        Ví dụ: {'1': '5.0', '296': '4.5'}
+        """
+        self.connect()
+        user_ratings = {}
+        try:
+            with self.pool.connection() as connection:
+                # Giả định bảng ratings có RowKey là UserID
+                table = connection.table(config.HBASE_TABLE_RATINGS)
+                row = table.row(str(user_id).encode('utf-8'))
+                
+                if row:
+                    for key, val in row.items():
+                        # Key format trong HBase thường là: b'family:movieId'
+                        # Ví dụ: b'r:1', b'r:296'
+                        if b':' in key:
+                            # Tách lấy phần MovieID (phần sau dấu :)
+                            fam, mid_bytes = key.split(b':', 1)
+                            mid = mid_bytes.decode('utf-8')
+                            rating = val.decode('utf-8')
+                            user_ratings[mid] = rating
+                            
+            return user_ratings
+        except Exception as e:
+            print(f"!!! [Get User Ratings Error] {e}")
+            return {}
