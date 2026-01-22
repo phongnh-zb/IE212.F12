@@ -23,7 +23,7 @@ from src.models.hybrid_recommender import HybridRecommender
 def save_partition_to_hbase(iterator, table_name, column_family):
     """
     Worker ghi dữ liệu vào HBase với cơ chế 'Smart Retry'.
-    [UPDATE]: Thêm tham số column_family để lưu riêng kết quả từng model (nếu cần)
+    [UPDATE]: Lưu format 'ID:Rating' để hiển thị độ phù hợp.
     """
     BATCH_SIZE = 50
     MAX_RETRIES = 5
@@ -41,15 +41,13 @@ def save_partition_to_hbase(iterator, table_name, column_family):
         table = connection.table(table_name)
         batch_data = []
         
-        # Tên cột: 'info:movieIds' (Mặc định dùng chung info để App dễ đọc)
-        # Nếu muốn tách riêng, có thể dùng f"{column_family}:movieIds"
-        # Nhưng hiện tại App.py chỉ đọc 'info', nên ta giữ nguyên 'info' để model sau ghi đè model trước
-        # (Hoặc User chạy model nào cuối cùng sẽ là kết quả hiển thị)
+        # Tên cột: 'info:movieIds'
         col_name = b'info:movieIds'
 
         for row in iterator:
-            rec_ids = ",".join([str(r.movieId) for r in row.recommendations])
-            batch_data.append((str(row.userId).encode(), {col_name: rec_ids.encode()}))
+            rec_data = ",".join([f"{r.movieId}:{r.rating:.2f}" for r in row.recommendations])
+            
+            batch_data.append((str(row.userId).encode(), {col_name: rec_data.encode()}))
             
             if len(batch_data) >= BATCH_SIZE:
                 for attempt in range(MAX_RETRIES):

@@ -38,8 +38,8 @@ def get_provider():
 
 # --- 3. CACHE DATA (Quan trọng) ---
 # Dùng @st.cache_data cho dữ liệu tải về (DataFrame, List, Json)
-# TTL=300 nghĩa là cache này sống 5 phút, sau đó sẽ tự clear để lấy data mới.
-@st.cache_data(ttl=300)
+# TTL=600 nghĩa là cache này sống 10 phút, sau đó sẽ tự clear để lấy data mới.
+@st.cache_data(ttl=600)
 def load_recommendations(user_id):
     provider = get_provider()
     if provider:
@@ -58,7 +58,7 @@ def main():
         btn_reload = st.button("Lấy Gợi Ý (Refresh)")
         
         st.markdown("---")
-        st.info("💡 **Note:** Data được lấy trực tiếp từ HBase và cache trong 5 phút.")
+        st.info("💡 **Note:** Data được lấy trực tiếp từ HBase và cache trong 10 phút.")
 
     # Logic hiển thị
     if user_input:
@@ -89,12 +89,12 @@ def main():
             # Chuyển list dict thành DataFrame đẹp
             df = pd.DataFrame(recs)
             
-            # Đổi tên cột cho thân thiện
             df = df.rename(columns={
                 "movieId": "ID",
                 "title": "Tên Phim",
                 "genres": "Thể Loại",
-                "avg_rating": "Điểm TB (Hadoop)"
+                "avg_rating": "Điểm TB (Hadoop)",
+                "pred_rating": "Độ Phù Hợp"
             })
 
             # Hiển thị bảng
@@ -102,7 +102,12 @@ def main():
                 df,
                 column_config={
                     "Điểm TB (Hadoop)": st.column_config.NumberColumn(
-                        format="%.1f ⭐"
+                        format="%.1f ⭐",
+                        help="Điểm đánh giá trung bình của cộng đồng"
+                    ),
+                    "Độ Phù Hợp": st.column_config.NumberColumn(
+                        format="%.1f 🔥",
+                        help="Hệ thống dự đoán bạn sẽ thích phim này bao nhiêu điểm"
                     ),
                 },
                 use_container_width=True,
@@ -114,6 +119,11 @@ def main():
                 # Convert sang số để vẽ (vì từ HBase ra là string)
                 df["rating_num"] = pd.to_numeric(df["Điểm TB (Hadoop)"], errors='coerce')
                 st.bar_chart(df.set_index("Tên Phim")["rating_num"])
+                
+            if 'Độ Phù Hợp' in df.columns: # <--- Sửa cả ở đây nữa
+                df["pred_num"] = pd.to_numeric(df["Độ Phù Hợp"], errors='coerce')
+                st.caption("Biểu đồ phân bố độ phù hợp:")
+                st.bar_chart(df.set_index("Tên Phim")["pred_num"])
 
         else:
             st.warning(f"⚠️ Không tìm thấy gợi ý nào cho User ID: {user_input}")

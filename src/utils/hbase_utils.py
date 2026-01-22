@@ -32,64 +32,63 @@ class HBaseProvider:
             )
 
     def get_recommendations(self, user_id):
-        """
-        Lấy danh sách phim gợi ý đầy đủ thông tin (Title, Genres, Rating).
-        Flow:
-        1. Vào bảng 'recommendations' -> Lấy danh sách ID phim (vd: "1,10,25")
-        2. Vào bảng 'movies' -> Lấy chi tiết cho từng ID đó.
-        """
         self.connect()
-        
-        # Kết quả trả về
         results = []
 
         try:
             with self.pool.connection() as connection:
-                # --- BƯỚC 1: Lấy Movie IDs gợi ý ---
+                # 1. Lấy dữ liệu thô từ bảng recommendations
                 rec_table = connection.table(config.HBASE_TABLE_RECS)
-                
-                # RowKey là userId (dạng string bytes)
                 row = rec_table.row(str(user_id).encode('utf-8'))
                 
-                # Kiểm tra xem có dữ liệu không
                 if not row or b'info:movieIds' not in row:
                     return []
                 
-                # Decode chuỗi "1,2,3"
-                movie_ids_str = row[b'info:movieIds'].decode('utf-8')
-                if not movie_ids_str:
+                # Decode: "1:4.5,10:3.8"
+                raw_string = row[b'info:movieIds'].decode('utf-8')
+                if not raw_string:
                     return []
-                    
-                movie_ids = movie_ids_str.split(',')
                 
-                # --- BƯỚC 2: Lấy chi tiết phim (Batch Get) ---
-                # Thay vì query 10 lần, ta query 1 lần lấy luôn 10 phim -> Rất nhanh
+                # Tách thành list các cặp [(1, 4.5), (10, 3.8)]
+                rec_items = []
+                movie_ids = []
+                
+                for item in raw_string.split(','):
+                    try:
+                        mid, pred_score = item.split(':')
+                        rec_items.append((mid, pred_score))
+                        movie_ids.append(mid)
+                    except ValueError:
+                        continue # Bỏ qua nếu lỗi format cũ
+                
+                # 2. Batch Get thông tin phim từ bảng movies
                 movie_table = connection.table(config.HBASE_TABLE_MOVIES)
-                
-                # Row keys phải là bytes
                 rows = movie_table.rows([mid.encode('utf-8') for mid in movie_ids])
                 
-                # --- BƯỚC 3: Format dữ liệu ---
+                # Tạo dictionary để map nhanh thông tin phim
+                movies_info = {}
                 for mid_bytes, data in rows:
-                    # Parse thông tin (Cần decode từ bytes sang string)
-                    title = data.get(b'info:title', b'Unknown').decode('utf-8')
-                    genres = data.get(b'info:genres', b'Unknown').decode('utf-8')
-                    
-                    # Lấy điểm rating trung bình (từ MapReduce job) nếu có
-                    # Mặc định là 'N/A' nếu phim chưa được chấm điểm
-                    avg_rating = data.get(b'stats:avg_rating', b'N/A').decode('utf-8')
-                    
-                    results.append({
-                        "movieId": mid_bytes.decode('utf-8'),
-                        "title": title,
-                        "genres": genres,
-                        "avg_rating": avg_rating
-                    })
+                    movies_info[mid_bytes.decode('utf-8')] = data
+
+                # 3. Gộp kết quả
+                for mid, pred_score in rec_items:
+                    data = movies_info.get(mid)
+                    if data:
+                        title = data.get(b'info:title', b'Unknown').decode('utf-8')
+                        genres = data.get(b'info:genres', b'Unknown').decode('utf-8')
+                        avg_rating = data.get(b'stats:avg_rating', b'N/A').decode('utf-8')
+                        
+                        results.append({
+                            "movieId": mid,
+                            "title": title,
+                            "genres": genres,
+                            "avg_rating": avg_rating,     # Điểm trung bình cộng đồng
+                            "pred_rating": pred_score     # Độ phù hợp
+                        })
                     
             return results
 
         except Exception as e:
-            # Log lỗi ra console để debug (Streamlit sẽ không hiện lỗi này lên UI)
             print(f"!!! [HBase Error] {e}")
             return []
 
