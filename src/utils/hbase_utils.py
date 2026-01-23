@@ -1,6 +1,7 @@
 # FILE: src/utils/hbase_utils.py
 import os
 import sys
+from datetime import datetime
 
 import happybase
 
@@ -167,48 +168,31 @@ class HBaseProvider:
     def get_user_history_detailed(self, user_id):
         self.connect()
         history = []
-        movie_ids = []
         ratings_map = {} 
+        timestamps_map = {} # Map lưu ngày đánh giá
 
         try:
             with self.pool.connection() as connection:
                 rating_table = connection.table(config.HBASE_TABLE_RATINGS)
-                
-                # CÁCH 1: Thử lấy kiểu Wide Table (RowKey = UserID)
-                # Ví dụ: RowKey='1', Cols={'r:100': '5.0', 'r:200': '4.0'}
                 row = rating_table.row(str(user_id).encode('utf-8'))
                 
                 if row:
-                    # Parse dữ liệu Wide Table
                     for key, val in row.items():
+                        # Key format: b'family:movieId'
                         if b':' in key:
                             fam, mid_bytes = key.split(b':', 1)
-                            ratings_map[mid_bytes.decode('utf-8')] = float(val.decode('utf-8'))
-                else:
-                    # CÁCH 2: Thử lấy kiểu Tall Table (RowKey = UserID_MovieID)
-                    # Ví dụ: RowKey='1_100', Val='5.0'
-                    # Quét tất cả dòng bắt đầu bằng "1_"
-                    prefix = f"{user_id}_".encode('utf-8')
-                    for key, data in rating_table.scan(row_prefix=prefix):
-                        # Key dạng b'1_296' -> Tách lấy 296
-                        try:
-                            # data thường là {b'r:rating': b'5.0'}
-                            # Lấy value đầu tiên tìm thấy hoặc đúng cột 'rating'
-                            for col_k, col_v in data.items():
-                                r_val = float(col_v.decode('utf-8'))
-                                # Tách MovieID từ RowKey (ví dụ: 1_296 -> 296)
-                                parts = key.decode('utf-8').split('_')
-                                if len(parts) >= 2:
-                                    mid = parts[1]
-                                    ratings_map[mid] = r_val
-                                break
-                        except: continue
+                            mid = mid_bytes.decode('utf-8')
+                            
+                            # Nếu là family 'r' -> Lưu điểm
+                            if fam == b'r':
+                                ratings_map[mid] = float(val.decode('utf-8'))
+                            # Nếu là family 't' -> Lưu thời gian
+                            elif fam == b't':
+                                timestamps_map[mid] = int(val.decode('utf-8'))
+                
+                if not ratings_map: return []
 
-                # Nếu sau cả 2 cách vẫn rỗng -> Return
-                if not ratings_map:
-                    return []
-
-                # --- PHẦN LẤY CHI TIẾT PHIM (GIỮ NGUYÊN) ---
+                # Lấy thông tin phim (Title, Genres)
                 movie_ids = list(ratings_map.keys())
                 movie_table = connection.table(config.HBASE_TABLE_MOVIES)
                 movie_rows = movie_table.rows([m.encode('utf-8') for m in movie_ids])
@@ -221,16 +205,23 @@ class HBaseProvider:
                         'genres': data.get(b'info:genres', b'--').decode('utf-8')
                     }
 
+                # Gộp dữ liệu trả về
                 for mid, rating in ratings_map.items():
                     info = movie_info.get(mid, {'title': f"ID:{mid}", 'genres': 'Unknown'})
+                    
+                    # Xử lý ngày tháng
+                    ts = timestamps_map.get(mid, 0)
+                    date_str = datetime.fromtimestamp(ts).strftime('%Y-%m-%d') if ts > 0 else "--"
+
                     history.append({
                         "movieId": mid,
                         "title": info['title'],
                         "genres": info['genres'],
-                        "rating": rating
+                        "rating": rating,
+                        "date": date_str
                     })
-                    
-            history.sort(key=lambda x: x['rating'], reverse=True)
+
+            history.sort(key=lambda x: (x['date'], x['rating']), reverse=True)
             return history
 
         except Exception as e:

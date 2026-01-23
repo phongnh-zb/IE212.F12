@@ -179,7 +179,7 @@ def main():
                             st.caption(f"*(Được đánh giá bởi {r_count} người dùng)*")
 
             with col_bot_right:
-                st.subheader("📊 So Sánh: Bạn vs Cộng Đồng")
+                st.subheader("📊 So Sánh: Người Dùng vs Cộng Đồng")
                 
                 df_chart = df_display.copy()
                 df_chart['opacity'] = 0.3
@@ -257,7 +257,7 @@ def main():
                 ).properties(height=250)
                 st.altair_chart(hist_chart, use_container_width=True)
 
-                cols = ["STT", "movieId", "title", "genres", "rating"]
+                cols = ["STT", "movieId", "title", "genres", "rating", "date"]
                 df_hist = df_hist[cols]
 
                 st.dataframe(
@@ -267,7 +267,8 @@ def main():
                         "movieId": st.column_config.TextColumn("ID", width="small"),
                         "title": "Tên Phim",
                         "genres": "Thể Loại",
-                        "rating": st.column_config.NumberColumn("Điểm Chấm", format="%.1f ⭐")
+                        "rating": st.column_config.NumberColumn("Điểm Chấm", format="%.1f ⭐"),
+                        "date": st.column_config.DateColumn("Ngày Đánh Giá", format="DD/MM/YYYY")
                     },
                     width='stretch',
                     height=500,
