@@ -14,7 +14,7 @@ from configs import config
 from src.utils.hbase_utils import HBaseProvider
 
 # --- CONFIG TRANG ---
-st.set_page_config(page_title="Hệ Thống Gợi Ý Phim - Big Data", page_icon="🎬", layout="wide")
+st.set_page_config(page_title="Hệ thống gợi ý phim thông minh sử dụng Big Data", page_icon="🎬", layout="wide")
 
 # --- CACHE CONNECTION ---
 @st.cache_resource
@@ -46,13 +46,16 @@ def load_all_system_data(limit=100):
     if provider: return provider.scan_recommendations(limit=limit)
     return []
 
+@st.cache_data(ttl=600)
+def load_genre_stats():
+    provider = get_provider()
+    if provider: return provider.get_genre_stats()
+    return []
+
 # --- UI MAIN ---
 def main():
-    # [CẬP NHẬT 1] Tiêu đề & Caption mô tả tính năng
-    st.title("🎬 Xây dựng hệ thống gợi ý phim thông minh sử dụng Big Data")
-    
-    # Caption mới: Mô tả công nghệ và mục tiêu của hệ thống
-    st.caption("Ứng dụng công nghệ xử lý dữ liệu lớn (Spark ALS, Hadoop HDFS, HBase) để phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa theo thời gian thực.")
+    st.title("🎬 Hệ thống gợi ý phim thông minh sử dụng Big Data")
+    st.caption("Ứng dụng công nghệ xử lý dữ liệu lớn (Spark ALS, Hadoop HDFS, HBase) để phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa.")
 
     # TABS
     tab1, tab2, tab3 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống"])
@@ -66,10 +69,9 @@ def main():
         recs = [] 
         user_history = {}
         
-        # --- CỘT TRÁI: INPUT ---
         with col_top_left:
             st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất.")
-            user_input = st.text_input("Nhập ID Người Dùng để xem đề xuất:", value="1")
+            user_input = st.text_input("Nhập ID Người Dùng (User ID):", value="1")
             
             if user_input and user_input.isdigit():
                 with st.spinner(f"AI đang phân tích sở thích User {user_input}..."):
@@ -83,7 +85,6 @@ def main():
             elif user_input:
                 st.error("Vui lòng nhập User ID là số.")
 
-        # --- CỘT PHẢI: INTERACTIVE TABLE ---
         selected_movie_data = None 
 
         with col_top_right:
@@ -91,10 +92,8 @@ def main():
 
             if recs:
                 df = pd.DataFrame(recs)
-                
-                # [CẬP NHẬT 2] Thêm cột STT
                 df.reset_index(drop=True, inplace=True)
-                df.index += 1 # Bắt đầu từ 1
+                df.index += 1 
                 df["STT"] = df.index
 
                 df_display = df.rename(columns={
@@ -112,9 +111,6 @@ def main():
 
                 df_display["Điểm Của Bạn"] = df_display["ID"].apply(format_my_rating)
 
-                st.caption("Click vào dòng để xem chi tiết của phim")
-                
-                # Reorder columns để STT lên đầu
                 cols = ["STT", "ID", "Tên Phim", "Thể Loại", "Điểm Cộng Đồng", "Độ Phù Hợp", "Điểm Của Bạn"]
                 df_final = df_display[cols]
 
@@ -125,13 +121,9 @@ def main():
                         "ID": st.column_config.TextColumn("ID", width="small"),
                         "Điểm Cộng Đồng": st.column_config.NumberColumn(format="%.1f ⭐"),
                         "Độ Phù Hợp": st.column_config.NumberColumn(format="%.1f 🔥", help="AI dự đoán bạn sẽ thích"),
-                        "Điểm Của Bạn": st.column_config.TextColumn(
-                            "Điểm Của Bạn",
-                            help="Điểm thực tế bạn đã chấm (hiển thị '--' nếu chưa chấm)",
-                            width="small"
-                        )
+                        "Điểm Của Bạn": st.column_config.TextColumn("Điểm Của Bạn", width="small")
                     },
-                    width='stretch',
+                    width='stretch', 
                     hide_index=True,
                     on_select="rerun",           
                     selection_mode="single-row"  
@@ -150,14 +142,12 @@ def main():
             else:
                 st.info("👈 Kết quả sẽ hiển thị tại đây sau khi bạn nhập User ID.")
 
-        # --- HÀNG DƯỚI: CHI TIẾT & BIỂU ĐỒ ---
         if recs and selected_movie_data:
             st.markdown("---")
             col_bot_left, col_bot_right = st.columns([1, 2])
             
             with col_bot_left:
                 st.subheader(f"🎬 {selected_movie_data['title']}")
-                
                 details = get_provider().get_movie_details(selected_movie_data['movieId'])
                 
                 if details:
@@ -176,8 +166,9 @@ def main():
                         
                     with st.expander("📝 Xem mô tả nội dung", expanded=True):
                         st.caption(f"Thông tin chi tiết phim '{details['title']}'...")
-                else:
-                    st.error("Không tải được thông tin chi tiết.")
+                        r_count = details.get('rating_count', 0)
+                        if int(r_count) > 0:
+                            st.caption(f"*(Được đánh giá bởi {r_count} người dùng)*")
 
             with col_bot_right:
                 st.subheader("📊 So Sánh: Bạn vs Cộng Đồng")
@@ -207,7 +198,7 @@ def main():
                     opacity='opacity'
                 )
                 
-                chart = (rule + p_community + p_ai).properties(height=400)
+                chart = (rule + p_community + p_ai).properties(height=500)
                 st.altair_chart(chart, use_container_width=True)
             
     # ==========================================
@@ -217,8 +208,8 @@ def main():
         col_hist_left, col_hist_right = st.columns([1, 3])
         
         with col_hist_left:
-            st.info("Xem lại các phim người dùng đã xem để hiểu 'gu' của họ.")
-            hist_user_input = st.text_input("Nhập ID Người Dùng để xem lịch sử:", value="1")
+            st.info("Xem lại các phim người dùng đã xem.")
+            hist_user_input = st.text_input("Nhập ID Người Dùng (History):", value="1")
             
             history_data = []
             if hist_user_input and hist_user_input.isdigit():
@@ -228,35 +219,30 @@ def main():
             if history_data:
                 df_hist = pd.DataFrame(history_data)
                 avg_score = df_hist['rating'].mean()
-                total_movies = len(df_hist)
                 
                 st.markdown("### 🌟 Tổng Quan")
-                st.metric("Đã Đánh Giá", f"{total_movies} phim")
+                st.metric("Đã Đánh Giá", f"{len(df_hist)} phim")
                 st.metric("Điểm Trung Bình", f"{avg_score:.1f} / 5.0")
             elif hist_user_input:
-                st.warning("Người dùng này chưa đánh giá phim nào (hoặc ID không tồn tại).")
+                st.warning("Không có dữ liệu.")
 
         with col_hist_right:
             st.subheader(f"📋 Danh sách phim đã xem")
 
             if history_data:
                 df_hist = pd.DataFrame(history_data)
-                
-                # [CẬP NHẬT 2] Thêm cột STT
                 df_hist.reset_index(drop=True, inplace=True)
                 df_hist.index += 1
                 df_hist["STT"] = df_hist.index
                 
-                st.caption("Phân bố điểm số (Người dùng này thường chấm mấy sao?)")
                 hist_chart = alt.Chart(df_hist).mark_bar().encode(
                     x=alt.X('rating:O', title='Số Sao'),
                     y=alt.Y('count()', title='Số lượng phim'),
                     color=alt.Color('rating:O', scale=alt.Scale(scheme='magma'), legend=None),
                     tooltip=['rating', 'count()']
-                ).properties(height=200)
+                ).properties(height=250)
                 st.altair_chart(hist_chart, use_container_width=True)
 
-                # Reorder columns
                 cols = ["STT", "movieId", "title", "genres", "rating"]
                 df_hist = df_hist[cols]
 
@@ -282,49 +268,103 @@ def main():
     with tab3:
         st.header("📊 Giám Sát Dữ Liệu Trực Tiếp")
         
-        col_search, col_btn = st.columns([3, 1], vertical_alignment="bottom")
+        st.subheader("🍰 Phân Bố Thể Loại Phim")
         
-        with col_search:
-            search_query = st.text_input("🔎 Lọc (User ID / Tên Phim):", value="", placeholder="Nhập từ khóa...")
+        with st.spinner("Đang tải thống kê thể loại..."):
+            genre_data = load_genre_stats()
             
-        with col_btn:
-            if st.button("🔄 Làm Mới Dữ Liệu", use_container_width=True):
-                load_all_system_data.clear()
-                st.rerun()
+        if genre_data:
+            df_genre = pd.DataFrame(genre_data)
+            
+            # 1. Thêm cột STT cho bảng
+            df_genre.reset_index(drop=True, inplace=True)
+            df_genre.index += 1
+            df_genre["STT"] = df_genre.index
+            
+            # 2. Xử lý nhãn biểu đồ
+            total_movies = df_genre['count'].sum()
+            threshold = total_movies * 0.03 # Ngưỡng 3%
+            
+            df_genre['label'] = df_genre.apply(
+                lambda x: str(x['count']) if x['count'] > threshold else "", 
+                axis=1
+            )
+            
+            col_chart, col_data = st.columns([1, 1])
+            
+            with col_chart:
+                base = alt.Chart(df_genre).encode(
+                    theta=alt.Theta("count", stack=True)
+                )
+                
+                pie = base.mark_arc(outerRadius=160).encode(
+                    color=alt.Color("genre", legend=alt.Legend(title="Thể Loại", orient='left')),
+                    order=alt.Order("count", sort="descending"),
+                    tooltip=["genre", "count", alt.Tooltip("count", format=",")]
+                )
+                
+                # Sử dụng cột 'label' đã lọc thay vì 'count' gốc
+                text = base.mark_text(radius=180).encode(
+                    text=alt.Text("label"), 
+                    order=alt.Order("count", sort="descending"),
+                    color=alt.value("black")  
+                )
+                
+                st.altair_chart((pie + text).properties(height=500), use_container_width=True)
+                
+            with col_data:
+                st.caption("Chi tiết số lượng từng thể loại:")
+                
+                # Reorder để STT lên đầu
+                cols_genre = ["STT", "genre", "count"]
+                df_genre_display = df_genre[cols_genre]
+                
+                st.dataframe(
+                    df_genre_display,
+                    column_config={
+                        "STT": st.column_config.NumberColumn("STT", width="small", format="%d"),
+                        "genre": "Thể Loại",
+                        "count": st.column_config.NumberColumn("Số Phim", format="%d 🎬")
+                    },
+                    hide_index=True,
+                    height=500
+                )
+        else:
+            st.warning("⚠️ Chưa có dữ liệu thống kê thể loại. Hãy chạy Pipeline Bước 2.")
 
-        with st.spinner("Đang tải dữ liệu hệ thống..."):
+        st.divider()
+
+        st.subheader("🔎 Chi Tiết Gợi Ý Phim Theo Người Dùng")
+        
+        search_query = st.text_input("Tìm kiếm trong bảng (User ID / Tên Phim):", placeholder="Nhập từ khóa...")
+            
+        with st.spinner("Đang tải dữ liệu bảng..."):
             all_data = load_all_system_data(limit=100)
         
         if all_data:
             df_all = pd.DataFrame(all_data)
-            
-            # [CẬP NHẬT 2] Thêm cột STT
             df_all.reset_index(drop=True, inplace=True)
             df_all.index += 1
             df_all["STT"] = df_all.index
             
             if search_query:
                 try:
-                    if "Recommendations (Details)" in df_all.columns:
-                        mask = (
-                            df_all["User ID"].astype(str).str.contains(search_query, case=False) | 
-                            df_all["Recommendations (Details)"].astype(str).str.contains(search_query, case=False)
-                        )
-                        df_filtered = df_all[mask]
-                    else:
-                        df_filtered = df_all
+                    mask = (
+                        df_all["User ID"].astype(str).str.contains(search_query, case=False) | 
+                        df_all["Recommendations (Details)"].astype(str).str.contains(search_query, case=False)
+                    )
+                    df_filtered = df_all[mask]
                 except: df_filtered = df_all
             else:
                 df_filtered = df_all
 
             if not df_filtered.empty:
-                # Reorder columns
                 cols = ["STT"] + [c for c in df_filtered.columns if c != "STT"]
                 df_filtered = df_filtered[cols]
 
                 st.dataframe(
                     df_filtered,
-                    width='stretch',
+                    width='stretch', 
                     column_config={
                         "STT": st.column_config.NumberColumn("STT", width="small", format="%d"),
                         "User ID": st.column_config.TextColumn("ID Người Dùng", width=80),
@@ -333,12 +373,11 @@ def main():
                     },
                     hide_index=True
                 )
-                st.caption(f"Đang hiển thị {len(df_filtered)} bản ghi.")
+                st.caption(f"Đang hiển thị {len(df_filtered)} bản ghi mới nhất.")
             else:
                 st.warning(f"🚫 Không tìm thấy kết quả nào khớp với: '{search_query}'")
         else:
-            load_all_system_data.clear()
-            st.info("📭 Hệ thống chưa có dữ liệu. Vui lòng bấm 'Làm Mới Dữ Liệu'.")
+            st.info("📭 Hệ thống chưa có dữ liệu.")
             
 if __name__ == "__main__":
     main()

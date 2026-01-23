@@ -124,12 +124,11 @@ class HBaseProvider:
                     return None
                 
                 return {
-                    "movieId": str(movie_id),
-                    "title": row.get(b'info:title', b'Unknown').decode('utf-8'),
-                    "genres": row.get(b'info:genres', b'Unknown').decode('utf-8'),
-                    # Lấy thêm các chỉ số thống kê nếu có
-                    "avg_rating": row.get(b'stats:avg_rating', b'N/A').decode('utf-8'),
-                    "rating_count": row.get(b'stats:rating_count', b'0').decode('utf-8') # Nếu bạn có chạy MapReduce đếm số rating
+                    'movieId': movie_id,
+                    'title': row.get(b'info:title', b'Unknown').decode('utf-8'),
+                    'genres': row.get(b'info:genres', b'--').decode('utf-8'),
+                    'avg_rating': float(row.get(b'stats:avg_rating', b'0.0').decode('utf-8')),
+                    'rating_count': int(row.get(b'stats:rating_count', b'0').decode('utf-8'))
                 }
         except Exception as e:
             print(f"!!! [HBase Get Error] {e}")
@@ -236,4 +235,36 @@ class HBaseProvider:
 
         except Exception as e:
             print(f"!!! [Get History Error] {e}")
+            return []
+        
+    def get_genre_stats(self):
+        """
+        Lấy thống kê thể loại từ bảng 'genre_stats'
+        """
+        self.connect()
+        data = []
+        try:
+            # QUAN TRỌNG: Phải dùng 'with' để mở kết nối từ pool
+            with self.pool.connection() as connection:
+                # Kiểm tra bảng có tồn tại không
+                tables = [t.decode('utf-8') for t in connection.tables()]
+                if 'genre_stats' not in tables:
+                    return []
+
+                table = connection.table('genre_stats')
+                
+                for key, value in table.scan():
+                    genre = key.decode('utf-8')
+                    count_val = value.get(b'info:count')
+                    if count_val:
+                        data.append({
+                            "genre": genre, 
+                            "count": int(count_val.decode('utf-8'))
+                        })
+            
+            data.sort(key=lambda x: x['count'], reverse=True)
+            return data
+            
+        except Exception as e:
+            print(f"!!! [Get Genre Stats Error] {e}")
             return []

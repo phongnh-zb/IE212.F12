@@ -138,4 +138,16 @@ run_job "Count Genres" \
     "$SRC_DIR/mapreduce/count_genres/mapper.py" \
     "$SRC_DIR/mapreduce/count_genres/reducer.py"
 
+# Job 4: NẠP KẾT QUẢ TỪ HDFS VÀO HBASE
+log_info "------------------------------------------------"
+log_info "ĐANG NẠP KẾT QUẢ THỐNG KÊ VÀO HBASE..."
+
+# Kiểm tra file loader có tồn tại không
+if [ -f "$SRC_DIR/hbase/load_stats.py" ]; then
+    python3 "$SRC_DIR/hbase/load_stats.py"
+    log_info "-> Đã cập nhật 'Điểm Cộng Đồng' vào bảng Movies."
+else
+    log_error "LỖI: Không tìm thấy file src/hbase/load_stats.py"
+fi
+
 log_info ">>> MAPREDUCE PIPELINE HOÀN TẤT!"
