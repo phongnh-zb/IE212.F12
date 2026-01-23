@@ -73,17 +73,21 @@ def main():
             st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất.")
             user_input = st.text_input("Nhập ID Người Dùng (User ID):", value="1")
             
-            if user_input and user_input.isdigit():
-                with st.spinner(f"AI đang phân tích sở thích User {user_input}..."):
+            # [LOGIC MỚI] Kiểm tra đầu vào
+            if not user_input:
+                st.error("⚠️ Vui lòng nhập User ID (không được để trống).")
+            elif not user_input.isdigit():
+                st.error("⚠️ Vui lòng nhập User ID là số (Ví dụ: 1, 100).")
+            else:
+                # Chỉ chạy khi input hợp lệ
+                with st.spinner(f"AI đang phân tích sở thích người dùng {user_input}..."):
                     recs = load_recommendations(user_input)
                     user_history = get_provider().get_user_ratings(user_input)
                 
                 if recs:
                     st.success(f"✅ Tìm thấy {len(recs)} phim phù hợp!")
                 else:
-                    st.warning("⚠️ Không tìm thấy dữ liệu gợi ý.")
-            elif user_input:
-                st.error("Vui lòng nhập User ID là số.")
+                    st.warning("⚠️ Không tìm thấy dữ liệu gợi ý cho User này.")
 
         selected_movie_data = None 
 
@@ -140,7 +144,11 @@ def main():
                     selected_movie_data['my_rating'] = my_rate if my_rate else "Chưa xem"
 
             else:
-                st.info("👈 Kết quả sẽ hiển thị tại đây sau khi bạn nhập User ID.")
+                # Thông báo hướng dẫn khi chưa có dữ liệu (hoặc đang lỗi input)
+                if not user_input or not user_input.isdigit():
+                    st.info("👈 Vui lòng nhập ID hợp lệ bên trái để xem kết quả.")
+                else:
+                    st.info("📭 Không có dữ liệu hiển thị.")
 
         if recs and selected_movie_data:
             st.markdown("---")
@@ -212,7 +220,13 @@ def main():
             hist_user_input = st.text_input("Nhập ID Người Dùng (History):", value="1")
             
             history_data = []
-            if hist_user_input and hist_user_input.isdigit():
+            
+            # [LOGIC MỚI] Kiểm tra đầu vào Tab 2
+            if not hist_user_input:
+                st.error("⚠️ Vui lòng nhập User ID (không được để trống).")
+            elif not hist_user_input.isdigit():
+                st.error("⚠️ Vui lòng nhập User ID là số.")
+            else:
                  with st.spinner("Đang tải lịch sử từ HBase..."):
                     history_data = load_user_history(hist_user_input)
             
@@ -223,8 +237,8 @@ def main():
                 st.markdown("### 🌟 Tổng Quan")
                 st.metric("Đã Đánh Giá", f"{len(df_hist)} phim")
                 st.metric("Điểm Trung Bình", f"{avg_score:.1f} / 5.0")
-            elif hist_user_input:
-                st.warning("Không có dữ liệu.")
+            elif hist_user_input and hist_user_input.isdigit():
+                st.warning("📭 Không tìm thấy lịch sử đánh giá cho User này.")
 
         with col_hist_right:
             st.subheader(f"📋 Danh sách phim đã xem")
@@ -318,7 +332,7 @@ def main():
                 # Reorder để STT lên đầu
                 cols_genre = ["STT", "genre", "count"]
                 df_genre_display = df_genre[cols_genre]
-                
+
                 st.dataframe(
                     df_genre_display,
                     column_config={
