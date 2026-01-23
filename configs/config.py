@@ -26,7 +26,3 @@ LINKS_FILE = "links.csv"
 MOVIES_FILE = "movies.csv"
 RATINGS_FILE = "ratings.csv"
 TAGS_FILE = "tags.csv"
-
-# SPARK CONFIGS
-SPARK_APP_NAME = "MovieLens_ALS_Training"
-SPARK_MASTER = "local[*]"

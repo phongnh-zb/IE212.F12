@@ -9,32 +9,49 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}>>> [HBASE] BẮT ĐẦU QUÁ TRÌNH NẠP DỮ LIỆU...${NC}"
 
-# 1. Nạp Movies (Danh sách phim)
+# ========================================================
+# BƯỚC 0: KHỞI TẠO BẢNG (SCHEMA INIT)
+# ========================================================
+# Bước này đảm bảo tất cả các bảng (Movies, Ratings, Recs, Stats...)
+# đều tồn tại trước khi nạp dữ liệu hay chạy App.
 echo "-----------------------------------"
-echo "1. Đang nạp bảng 'movies'..."
+echo "0. Đang khởi tạo cấu trúc bảng (Schema)..."
+if [ -f "src/hbase/init_tables.py" ]; then
+    python3 src/hbase/init_tables.py
+else
+    echo "⚠️  Không tìm thấy src/hbase/init_tables.py -> Bỏ qua bước tạo bảng."
+fi
+
+# ========================================================
+# BƯỚC 1: NẠP DỮ LIỆU TỪ FILE CSV
+# ========================================================
+
+# 1. Nạp Movies
+echo "-----------------------------------"
+echo "1. Đang nạp dữ liệu 'movies'..."
 python3 src/hbase/load_movies.py
 
-# 2. Nạp Ratings (Lịch sử đánh giá) - Đã fix lỗi tạo bảng
+# 2. Nạp Ratings
 echo "-----------------------------------"
-echo "2. Đang nạp bảng 'ratings'..."
+echo "2. Đang nạp dữ liệu 'ratings'..."
 python3 src/hbase/load_ratings.py
 
-# 3. Nạp Tags (Từ khóa do user gắn)
+# 3. Nạp Tags (Nếu có file)
 echo "-----------------------------------"
-echo "3. Đang nạp bảng 'tags'..."
+echo "3. Đang nạp dữ liệu 'tags'..."
 if [ -f "src/hbase/load_tags.py" ]; then
     python3 src/hbase/load_tags.py
 else
     echo "⚠️  Không tìm thấy src/hbase/load_tags.py -> Bỏ qua."
 fi
 
-# 4. Nạp Links (Liên kết IMDb/TMDB)
+# 4. Nạp Links (Nếu có file)
 echo "-----------------------------------"
-echo "4. Đang nạp bảng 'links'..."
+echo "4. Đang nạp dữ liệu 'links'..."
 if [ -f "src/hbase/load_links.py" ]; then
     python3 src/hbase/load_links.py
 else
     echo "⚠️  Không tìm thấy src/hbase/load_links.py -> Bỏ qua."
 fi
 
-echo -e "\n${GREEN}>>> [HBASE] HOÀN TẤT NẠP DỮ LIỆU!${NC}"
+echo -e "\n${GREEN}>>> [HBASE] HOÀN TẤT QUÁ TRÌNH ETL!${NC}"

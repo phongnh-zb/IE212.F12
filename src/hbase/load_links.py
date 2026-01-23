@@ -1,45 +1,56 @@
 import csv
 import os
+import sys
 
 import happybase
-from common import config
+
+# --- SETUP PATH ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+from configs import config
 
 
 def main():
-    connection = happybase.Connection(config.HBASE_HOST)
-    table = connection.table(config.HBASE_TABLE_MOVIES)
+    print(f"🔌 Kết nối HBase tại {config.HBASE_HOST}...")
+    try:
+        connection = happybase.Connection(config.HBASE_HOST, timeout=60000, autoconnect=True)
+        table = connection.table(config.HBASE_TABLE_MOVIES)
 
-    csv_path = os.path.join(config.DATA_DIR_LOCAL, config.LINKS_FILE)
-    print(f"Dang doc file tu: {csv_path}")
-
-    batch = table.batch()
-    count = 0
-    
-    # Format links.csv: movieId, imdbId, tmdbId
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        next(reader) # Skip header
+        csv_path = os.path.join(config.DATA_DIR_LOCAL, config.LINKS_FILE)
+        print(f"📂 Đang đọc file: {csv_path}")
         
-        for row in reader:
-            if len(row) < 3: continue
-            
-            movie_id = row[0]
-            imdb_id = row[1]
-            tmdb_id = row[2]
+        if not os.path.exists(csv_path):
+             print(f"⚠️ Không tìm thấy file links: {csv_path}")
+             return
 
-            # Update vào bảng movies, Column Family 'info'
-            batch.put(movie_id.encode('utf-8'), {
-                b'info:imdbId': imdb_id.encode('utf-8'),
-                b'info:tmdbId': tmdb_id.encode('utf-8')
-            })
+        batch = table.batch(batch_size=1000)
+        count = 0
+        
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader) 
             
-            count += 1
-            if count % 5000 == 0:
-                print(f"Da link {count} movies...")
+            for row in reader:
+                if len(row) < 3: continue
+                movie_id = row[0]
+                imdb_id = row[1]
+                tmdb_id = row[2]
 
-    batch.send()
-    connection.close()
-    print(f"THANH CONG! Da cap nhat links cho {count} movies.")
+                batch.put(movie_id.encode('utf-8'), {
+                    b'info:imdbId': imdb_id.encode('utf-8'),
+                    b'info:tmdbId': tmdb_id.encode('utf-8')
+                })
+                count += 1
+                
+        batch.send()
+        connection.close()
+        print(f"✅ HOÀN TẤT! Đã link {count} movies.")
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
 if __name__ == "__main__":
     main()

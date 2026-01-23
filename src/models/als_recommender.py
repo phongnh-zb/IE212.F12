@@ -3,7 +3,6 @@ import time
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.recommendation import ALS
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
-from pyspark.sql.functions import col, explode
 
 
 class ALSRecommender:
