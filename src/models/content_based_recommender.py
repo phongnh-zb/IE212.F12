@@ -9,13 +9,13 @@ class ContentBasedRecommender:
         self.spark = spark_session
         self.final_recs = None
 
-    def train(self, ratings_df, movies_df):
+    def train(self, df_ratings, df_movies):
         print("   -> Training Content-Based (Genre Matching)...")
         
         # 1. Tìm "Sở thích" của User (Các thể loại phim User chấm >= 4.0)
         # Join Ratings với Movies
-        user_movies = ratings_df.filter("rating >= 4.0") \
-            .join(movies_df, "movieId") \
+        user_movies = df_ratings.filter("rating >= 4.0") \
+            .join(df_movies, "movieId") \
             .select("userId", "genres")
 
         # Tách genres (Action|Adventure -> [Action, Adventure])
@@ -28,10 +28,10 @@ class ContentBasedRecommender:
 
         # 2. Tìm phim gợi ý (Phim thuộc Top Genres đó, rating trung bình cao)
         # Tính điểm trung bình cho từng phim
-        movie_scores = ratings_df.groupBy("movieId").agg(avg("rating").alias("avg_rating"))
+        movie_scores = df_ratings.groupBy("movieId").agg(avg("rating").alias("avg_rating"))
         
         # Phim + Genre + Score
-        exploded_movies = movies_df.withColumn("genre", explode(split(col("genres"), "\|"))) \
+        exploded_movies = df_movies.withColumn("genre", explode(split(col("genres"), "\|"))) \
             .join(movie_scores, "movieId")
 
         # 3. Join User Profile với Movies

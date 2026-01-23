@@ -17,6 +17,7 @@ from configs import config
 # --- IMPORT MODELS ---
 from src.models.als_recommender import ALSRecommender
 from src.models.content_based_recommender import ContentBasedRecommender
+from src.models.fpm_recommender import FPGrowthRecommender
 from src.models.hybrid_recommender import HybridRecommender
 
 
@@ -91,6 +92,10 @@ def run_single_model(spark, model_type, df_ratings, df_movies):
     elif model_type == "hybrid":
         recommender = HybridRecommender(spark)
         recommender.train(df_ratings, df_movies)
+        df_recs = recommender.get_recommendations(k=10)
+    elif model_type == "fpm":
+        recommender = FPGrowthRecommender(spark)
+        recommender.train(df_ratings)
         df_recs = recommender.get_recommendations(k=10)
         
     if df_recs:

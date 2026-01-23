@@ -10,15 +10,15 @@ class HybridRecommender:
         self.cbf = ContentBasedRecommender(spark_session)
         self.hybrid_recs = None
 
-    def train(self, ratings_df, movies_df):
+    def train(self, df_ratings, df_movies):
         print("   -> Training Hybrid Model...")
         
         # 1. Chạy ALS
-        self.als.train(ratings_df)
+        self.als.train(df_ratings)
         df_als = self.als.get_recommendations(k=10)
         
         # 2. Chạy CBF
-        self.cbf.train(ratings_df, movies_df)
+        self.cbf.train(df_ratings, df_movies)
         df_cbf = self.cbf.get_recommendations(k=10)
 
         # 3. Kết hợp (Đơn giản là lấy kết quả ALS, nếu user thiếu thì bù bằng CBF)

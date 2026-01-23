@@ -129,7 +129,8 @@ class HBaseProvider:
                     'title': row.get(b'info:title', b'Unknown').decode('utf-8'),
                     'genres': row.get(b'info:genres', b'--').decode('utf-8'),
                     'avg_rating': float(row.get(b'stats:avg_rating', b'0.0').decode('utf-8')),
-                    'rating_count': int(row.get(b'stats:rating_count', b'0').decode('utf-8'))
+                    'rating_count': int(row.get(b'stats:rating_count', b'0').decode('utf-8')),
+                    "tags": row.get(b'info:tags', b'').decode('utf-8')
                 }
         except Exception as e:
             print(f"!!! [HBase Get Error] {e}")
@@ -138,27 +139,26 @@ class HBaseProvider:
     def get_user_ratings(self, user_id):
         """
         Lấy tất cả các phim mà user này đã từng đánh giá.
-        Trả về dictionary: {'movieId': 'rating'}
-        Ví dụ: {'1': '5.0', '296': '4.5'}
+        Chỉ lấy family 'r' (rating), bỏ qua 't' (timestamp).
         """
         self.connect()
         user_ratings = {}
         try:
             with self.pool.connection() as connection:
-                # Giả định bảng ratings có RowKey là UserID
                 table = connection.table(config.HBASE_TABLE_RATINGS)
                 row = table.row(str(user_id).encode('utf-8'))
                 
                 if row:
                     for key, val in row.items():
-                        # Key format trong HBase thường là: b'family:movieId'
-                        # Ví dụ: b'r:1', b'r:296'
+                        # Key format: b'family:movieId' (Ví dụ: b'r:1', b't:1')
                         if b':' in key:
-                            # Tách lấy phần MovieID (phần sau dấu :)
                             fam, mid_bytes = key.split(b':', 1)
-                            mid = mid_bytes.decode('utf-8')
-                            rating = val.decode('utf-8')
-                            user_ratings[mid] = rating
+                            
+                            # [FIX QUAN TRỌNG] Chỉ lấy family 'r'
+                            if fam == b'r': 
+                                mid = mid_bytes.decode('utf-8')
+                                rating = val.decode('utf-8')
+                                user_ratings[mid] = rating
                             
             return user_ratings
         except Exception as e:

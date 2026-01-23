@@ -55,7 +55,7 @@ def load_genre_stats():
 # --- UI MAIN ---
 def main():
     st.title("🎬 Hệ thống gợi ý phim thông minh sử dụng Big Data")
-    st.caption("Ứng dụng công nghệ xử lý dữ liệu lớn (Spark ALS, Hadoop HDFS, HBase) để phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa.")
+    st.caption("Phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa.")
 
     # TABS
     tab1, tab2, tab3 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống"])
@@ -160,6 +160,12 @@ def main():
                 
                 if details:
                     st.write(f"**Thể loại:** {details['genres']}")
+                    
+                    if details.get('tags'):
+                        # Dùng chip/badge nhìn cho đẹp hoặc text thường
+                        st.caption(f"🏷️ **Từ khóa:** {details['tags']}")
+                    else:
+                        st.caption(f"🏷️ **Từ khóa:** Không có")
                     
                     m1, m2, m3 = st.columns(3)
                     with m1:
