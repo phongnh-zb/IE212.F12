@@ -58,7 +58,6 @@ def main():
         
         # 5. Các bảng phụ khác (Nếu có)
         create_table_safe(connection, config.HBASE_TABLE_TAGS, {'info': dict()})
-        create_table_safe(connection, config.HBASE_TABLE_LINKS, {'info': dict()})
 
         connection.close()
         print("✅ HOÀN TẤT KHỞI TẠO BẢNG!")

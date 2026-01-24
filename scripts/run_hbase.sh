@@ -45,13 +45,4 @@ else
     echo "⚠️  Không tìm thấy src/hbase/load_tags.py -> Bỏ qua."
 fi
 
-# 4. Nạp Links (Nếu có file)
-echo "-----------------------------------"
-echo "4. Đang load dữ liệu 'links'..."
-if [ -f "src/hbase/load_links.py" ]; then
-    python3 src/hbase/load_links.py
-else
-    echo "⚠️  Không tìm thấy src/hbase/load_links.py -> Bỏ qua."
-fi
-
 echo -e "\n${GREEN}>>> [HBASE] HOÀN TẤT QUÁ TRÌNH ETL!${NC}"
