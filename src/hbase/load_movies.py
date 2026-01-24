@@ -25,7 +25,7 @@ def main():
         col_title = b'info:title'
         col_genres = b'info:genres'
 
-        with table.batch(batch_size=1000) as batch:
+        with table.batch(batch_size=500) as batch:
             with open(csv_file_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 next(reader) 

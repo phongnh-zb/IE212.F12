@@ -40,7 +40,7 @@ def main():
         print(f"📦 Đang ghi tags cho {len(movie_tags)} phim...")
 
         # Dùng 'with' để tự động quản lý batch
-        with table.batch(batch_size=1000) as batch:
+        with table.batch(batch_size=500) as batch:
             count = 0
             for mid, tags_set in movie_tags.items():
                 top_tags = list(tags_set)[:7] 

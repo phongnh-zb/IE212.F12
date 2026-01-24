@@ -19,8 +19,10 @@ class HBaseProvider:
         self.pool = None
     
     def connect(self):
+        # Chỉ tạo pool nếu chưa có hoặc đã bị reset
         if not self.pool:
-            # Tăng timeout lên 30s để tránh lỗi chập chờn
+            print(f"🔌 [HBase] Connecting to {self.host}...")
+            # Autoconnect=True giúp quản lý socket tốt hơn
             self.pool = happybase.ConnectionPool(size=3, host=self.host, timeout=30000, autoconnect=True)
 
     def get_recommendations(self, user_id):
@@ -51,7 +53,7 @@ class HBaseProvider:
                 for mid, pred_score in rec_items:
                     data = movies_info.get(mid)
                     if data:
-                        # Xử lý Avg Rating an toàn hơn
+                        # Xử lý Avg Rating
                         avg_rating_bytes = data.get(b'stats:avg_rating')
                         avg_rating = float(avg_rating_bytes.decode('utf-8')) if avg_rating_bytes else 0.0
                         
@@ -59,12 +61,13 @@ class HBaseProvider:
                             "movieId": mid,
                             "title": data.get(b'info:title', b'Unknown').decode('utf-8'),
                             "genres": data.get(b'info:genres', b'Unknown').decode('utf-8'),
-                            "avg_rating": avg_rating, # Trả về số float
+                            "avg_rating": avg_rating,
                             "pred_rating": float(pred_score)
                         })
             return results
         except Exception as e:
-            print(f"!!! [HBase Error] {e}")
+            print(f"!!! [HBase Error - get_recommendations] {e}")
+            self.pool = None # Reset pool để kết nối lại lần sau
             return []
 
     def get_movie_details(self, movie_id):
@@ -88,9 +91,11 @@ class HBaseProvider:
                     "tags": row.get(b'info:tags', b'').decode('utf-8')
                 }
         except Exception as e:
-            print(f"!!! [HBase Get Error] {e}")
+            print(f"!!! [HBase Error - get_movie_details] {e}")
+            self.pool = None # Reset pool
             return None
 
+    # Hàm lấy danh sách rating của user (dạng dict)
     def get_user_ratings(self, user_id):
         self.connect()
         user_ratings = {}
@@ -108,8 +113,11 @@ class HBaseProvider:
                                 user_ratings[mid] = rating
             return user_ratings
         except Exception as e:
+            print(f"!!! [HBase Error - get_user_ratings] {e}")
+            self.pool = None # Reset pool
             return {}
 
+    # Hàm lấy lịch sử chi tiết cho Tab 2
     def get_user_history_detailed(self, user_id):
         self.connect()
         history = []
@@ -128,10 +136,13 @@ class HBaseProvider:
                                 ratings_map[mid] = float(val.decode('utf-8'))
                             elif fam == b't':
                                 timestamps_map[mid] = int(val.decode('utf-8'))
+                
                 if not ratings_map: return []
+                
                 movie_ids = list(ratings_map.keys())
                 movie_table = connection.table(config.HBASE_TABLE_MOVIES)
                 movie_rows = movie_table.rows([m.encode('utf-8') for m in movie_ids])
+                
                 movie_info = {}
                 for key, data in movie_rows:
                     mid = key.decode('utf-8')
@@ -139,10 +150,12 @@ class HBaseProvider:
                         'title': data.get(b'info:title', b'Unknown').decode('utf-8'),
                         'genres': data.get(b'info:genres', b'--').decode('utf-8')
                     }
+                
                 for mid, rating in ratings_map.items():
                     info = movie_info.get(mid, {'title': f"ID:{mid}", 'genres': 'Unknown'})
                     ts = timestamps_map.get(mid, 0)
                     date_str = datetime.fromtimestamp(ts).strftime('%Y-%m-%d') if ts > 0 else "--"
+                    
                     history.append({
                         "movieId": mid,
                         "title": info['title'],
@@ -150,9 +163,13 @@ class HBaseProvider:
                         "rating": rating,
                         "date": date_str
                     })
+            
+            # Sắp xếp theo ngày mới nhất -> cũ nhất
             history.sort(key=lambda x: (x['date'], x['rating']), reverse=True)
             return history
         except Exception as e:
+            print(f"!!! [HBase Error - get_user_history] {e}")
+            self.pool = None # Reset pool
             return []
 
     def get_genre_stats(self):
@@ -170,10 +187,12 @@ class HBaseProvider:
                         data.append({"genre": genre, "count": int(count_val.decode('utf-8'))})
             data.sort(key=lambda x: x['count'], reverse=True)
             return data
-        except Exception: return []
+        except Exception as e:
+            print(f"!!! [HBase Error - get_genre_stats] {e}")
+            self.pool = None # Reset pool
+            return []
 
     def scan_recommendations(self, limit=100):
-        # ... (Giữ nguyên hàm cũ của bạn) ...
         self.connect()
         results = []
         all_movie_ids = set()
@@ -210,4 +229,7 @@ class HBaseProvider:
                         "Recommendations (Details)": " | ".join(formatted_recs)
                     })
             return results
-        except Exception: return []
+        except Exception as e:
+            print(f"!!! [HBase Error - scan_recommendations] {e}")
+            self.pool = None # Reset pool
+            return []

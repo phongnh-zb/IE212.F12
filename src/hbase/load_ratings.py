@@ -26,7 +26,7 @@ def main():
             print(f"❌ Không tìm thấy file: {csv_file_path}")
             return
 
-        with table.batch(batch_size=1000) as batch:
+        with table.batch(batch_size=500) as batch:
             with open(csv_file_path, mode='r', encoding='utf-8') as csvfile:
                 reader = csv.DictReader(csvfile)
                 count = 0

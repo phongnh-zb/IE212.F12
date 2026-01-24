@@ -1,34 +1,47 @@
 #!/bin/bash
 
-# Hadoop takes a while to start, so we only start it if it's not running
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}>>> [SERVICES] KIỂM TRA & KHỞI ĐỘNG HỆ THỐNG...${NC}"
+
+# 1. KHỞI ĐỘNG HADOOP
 if ! jps | grep -q "NameNode"; then
-    echo ">>> [START] Starting Hadoop (HDFS)..."
+    echo "-> Đang khởi động Hadoop..."
     start-all.sh
 else
-    echo "✔ Hadoop (HDFS) is already running."
+    echo "✔ Hadoop đã chạy."
 fi
 
-# Similarly, only start if not running
+# 2. KHỞI ĐỘNG HBASE
 if ! jps | grep -q "HMaster"; then
-    echo ">>> [START] Starting HBase..."
+    echo "-> Đang khởi động HBase..."
     start-hbase.sh
 else
-    echo "✔ HBase Master is already running."
+    echo "✔ HBase Master đã chạy."
 fi
 
-# For Thrift, we always Kill and Restart to avoid "Broken Pipe" or "Timeout" errors
-echo ">>> [RESET] Refreshing HBase Thrift Server..."
-
-# Find and kill old Thrift process (if any)
-# 'xargs -r' prevents errors if no pid is found
+# 3. RESTART THRIFT SERVER & CHỜ KẾT NỐI (QUAN TRỌNG)
+echo "-> Refreshing HBase Thrift Server..."
 jps | grep ThriftServer | awk '{print $1}' | xargs -r kill -9 2>/dev/null
-
-# Wait for OS to release the port (important)
-echo "-> Waiting for port 9090 release..."
 sleep 2
 
-# Restart
-echo ">>> [START] Starting new Thrift Server (Port 9090)..."
+# Khởi động ngầm
 hbase thrift start -p 9090 --infoport 9095 > /dev/null 2>&1 &
 
-echo "✔ Thrift start command sent."
+echo -ne "${YELLOW}⏳ Đang đợi Thrift Server mở port 9090...${NC}"
+
+# Vòng lặp kiểm tra Port 9090 (Tối đa 30 giây)
+for i in {1..30}; do
+    # Dùng Python để check port (vì không phải máy nào cũng có netcat/nc)
+    if python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); result = s.connect_ex(('127.0.0.1', 9090)); s.close(); exit(result)" 2>/dev/null; then
+        echo -e "\n${GREEN}✅ Thrift Server đã sẵn sàng kết nối!${NC}"
+        exit 0
+    fi
+    echo -ne "."
+    sleep 1
+done
+
+echo -e "\n${RED}❌ Lỗi: Thrift Server không phản hồi sau 30s. Hãy kiểm tra log!${NC}"
+exit 1

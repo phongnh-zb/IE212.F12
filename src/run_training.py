@@ -68,6 +68,9 @@ def run_single_model(spark, model_type, df_ratings, df_movies):
     print(f"\n>>> [TRAINING] Đang chạy Model: {model_type.upper()}...")
     df_recs = None
     
+    # Đăng ký bảng tạm để Hybrid Model có thể gọi lại
+    df_ratings.createOrReplaceTempView("ratings")
+    
     if model_type == "als":
         recommender = ALSRecommender(spark)
         recommender.train(df_ratings)
@@ -84,10 +87,27 @@ def run_single_model(spark, model_type, df_ratings, df_movies):
         df_recs = recommender.get_recommendations(k=10)
         
     if df_recs:
-        print(f">>> [SAVING] Lưu kết quả {model_type.upper()} vào HBase...")
-        table_name = config.HBASE_TABLE_RECS
-        df_recs.foreachPartition(lambda iter: worker_save_recs(iter, table_name))
-        print(f">>> [DONE] Hoàn tất {model_type.upper()}.")
+        print(f">>> [CACHING] Đang tính toán kết quả cuối cùng cho {model_type.upper()}...")
+        
+        # Điều này giúp tránh việc Spark phải tính lại toàn bộ logic khi có lỗi mạng
+        df_recs.cache()
+        try:
+            total_recs = df_recs.count() # Ép Spark chạy tính toán ngay lập tức
+            print(f">>> [READY] Đã sẵn sàng lưu {total_recs} users vào HBase.")
+            
+            if total_recs > 0:
+                print(f">>> [SAVING] Đang ghi xuống HBase (Table: {config.HBASE_TABLE_RECS})...")
+                # Bỏ coalesce(1) nếu dữ liệu > 100k dòng để tận dụng ghi song song
+                df_recs.foreachPartition(lambda iter: worker_save_recs(iter, config.HBASE_TABLE_RECS))
+                print(f">>> [DONE] Hoàn tất {model_type.upper()}.")
+            else:
+                print(">>> [WARN] Model chạy xong nhưng không tìm thấy gợi ý nào.")
+                
+        except Exception as e:
+            print(f"❌ [CRITICAL ERROR] Lỗi trong quá trình tính toán/lưu trữ: {e}")
+        finally:
+            df_recs.unpersist() # Giải phóng RAM
+            
     else:
         print(f">>> [SKIP] Model {model_type} không trả về kết quả.")
 
@@ -97,11 +117,15 @@ def run_single_model(spark, model_type, df_ratings, df_movies):
 
 def main(args_model):
     spark = SparkSession.builder \
-        .appName("MovieLens_Pipeline_v4") \
+        .appName("MovieLens_10M_Pipeline") \
         .master("local[*]") \
-        .config("spark.driver.memory", "4g") \
-        .config("spark.executor.memory", "4g") \
-        .config("spark.sql.shuffle.partitions", "50") \
+        .config("spark.driver.memory", "6g") \
+        .config("spark.executor.memory", "6g") \
+        .config("spark.driver.maxResultSize", "2g") \
+        .config("spark.sql.shuffle.partitions", "500") \
+        .config("spark.default.parallelism", "500") \
+        .config("spark.memory.offHeap.enabled", "true") \
+        .config("spark.memory.offHeap.size", "2g") \
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 

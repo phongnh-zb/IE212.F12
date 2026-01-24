@@ -16,8 +16,6 @@ from src.utils.hbase_utils import HBaseProvider
 # --- CONFIG TRANG ---
 st.set_page_config(page_title="Hệ thống gợi ý phim thông minh sử dụng Big Data", page_icon="🎬", layout="wide")
 
-# --- CACHE CONNECTION ---
-@st.cache_resource
 def get_provider():
     try:
         provider = HBaseProvider()
@@ -34,6 +32,7 @@ def load_recommendations(user_id):
     if provider: return provider.get_recommendations(user_id)
     return []
 
+# Hàm load lịch sử
 @st.cache_data(ttl=600)
 def load_user_history(user_id):
     provider = get_provider()
@@ -61,28 +60,24 @@ def main():
     tab1, tab2, tab3 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống"])
 
     # ==========================================
-    # TAB 1: USER VIEW
+    # TAB 1: USER VIEW (Gợi Ý)
     # ==========================================
     with tab1:
         col_top_left, col_top_right = st.columns([1, 2])
         
         recs = [] 
-        user_history = {}
         
         with col_top_left:
             st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất.")
             user_input = st.text_input("Nhập ID Người Dùng (User ID):", value="1")
             
-            # Kiểm tra đầu vào
             if not user_input:
-                st.error("⚠️ Vui lòng nhập User ID (không được để trống).")
+                st.error("⚠️ Vui lòng nhập User ID.")
             elif not user_input.isdigit():
-                st.error("⚠️ Vui lòng nhập User ID là số (Ví dụ: 1, 100).")
+                st.error("⚠️ Vui lòng nhập User ID là số.")
             else:
-                # Chỉ chạy khi input hợp lệ
                 with st.spinner(f"AI đang phân tích sở thích người dùng {user_input}..."):
                     recs = load_recommendations(user_input)
-                    user_history = get_provider().get_user_ratings(user_input)
                 
                 if recs:
                     st.success(f"✅ Tìm thấy {len(recs)} phim phù hợp!")
@@ -108,14 +103,7 @@ def main():
                 df_display["Điểm Cộng Đồng"] = df_display["Điểm Cộng Đồng"].astype(float)
                 df_display["Độ Phù Hợp"] = pd.to_numeric(df_display["Độ Phù Hợp"], errors='coerce').clip(0, 5)
 
-                def format_my_rating(mid):
-                    val = user_history.get(str(mid))
-                    if val: return f"{float(val):.1f} 👤"
-                    return "--"
-
-                df_display["Đánh Giá Của User"] = df_display["ID"].apply(format_my_rating)
-
-                cols = ["STT", "ID", "Tên Phim", "Thể Loại", "Điểm Cộng Đồng", "Độ Phù Hợp", "Đánh Giá Của User"]
+                cols = ["STT", "ID", "Tên Phim", "Thể Loại", "Điểm Cộng Đồng", "Độ Phù Hợp"]
                 df_final = df_display[cols]
 
                 event = st.dataframe(
@@ -125,7 +113,6 @@ def main():
                         "ID": st.column_config.TextColumn("ID", width="small"),
                         "Điểm Cộng Đồng": st.column_config.NumberColumn(width="small", format="%.1f ⭐"),
                         "Độ Phù Hợp": st.column_config.NumberColumn(width="small", format="%.1f 🔥", help="AI dự đoán bạn sẽ thích"),
-                        "Đánh Giá Của User": st.column_config.TextColumn("Đánh Giá Của User")
                     },
                     width='stretch', 
                     hide_index=True,
@@ -136,17 +123,12 @@ def main():
                 if len(event.selection.rows) > 0:
                     selected_index = event.selection.rows[0]
                     selected_movie_data = recs[selected_index]
-                    my_rate = user_history.get(str(selected_movie_data['movieId']))
-                    selected_movie_data['my_rating'] = my_rate if my_rate else "Chưa xem"
                 else:
                     selected_movie_data = recs[0]
-                    my_rate = user_history.get(str(selected_movie_data['movieId']))
-                    selected_movie_data['my_rating'] = my_rate if my_rate else "Chưa xem"
 
             else:
-                # Thông báo hướng dẫn khi chưa có dữ liệu (hoặc đang lỗi input)
                 if not user_input or not user_input.isdigit():
-                    st.info("👈 Vui lòng nhập ID hợp lệ bên trái để xem kết quả.")
+                    st.info("👈 Vui lòng nhập ID hợp lệ.")
                 else:
                     st.info("📭 Không có dữ liệu hiển thị.")
 
@@ -162,21 +144,16 @@ def main():
                     st.write(f"**Thể loại:** {details['genres']}")
                     
                     if details.get('tags'):
-                        # Dùng chip/badge nhìn cho đẹp hoặc text thường
                         st.caption(f"🏷️ **Từ khóa:** {details['tags']}")
                     else:
                         st.caption(f"🏷️ **Từ khóa:** Không có")
                     
-                    m1, m2, m3 = st.columns(3)
+                    m1, m2 = st.columns(2)
                     with m1:
                         st.metric("Điểm Cộng Đồng", f"{float(details['avg_rating']):.1f} ⭐")
                     with m2:
                         pred_score = float(selected_movie_data.get('pred_rating', 0))
                         st.metric("Độ Phù Hợp", f"{pred_score:.1f} 🔥")
-                    with m3:
-                        my_r = selected_movie_data.get('my_rating')
-                        val_str = f"{float(my_r):.1f} 👤" if my_r != "Chưa xem" else "--"
-                        st.metric("Đánh Giá Của User", val_str)
                         
                     with st.expander("📝 Xem mô tả nội dung", expanded=True):
                         st.caption(f"Thông tin chi tiết phim '{details['title']}'...")
@@ -214,7 +191,7 @@ def main():
                 
                 chart = (rule + p_community + p_ai).properties(height=500)
                 st.altair_chart(chart, use_container_width=True)
-            
+
     # ==========================================
     # TAB 2: LỊCH SỬ ĐÁNH GIÁ
     # ==========================================
@@ -227,9 +204,8 @@ def main():
             
             history_data = []
             
-            # Kiểm tra đầu vào
             if not hist_user_input:
-                st.error("⚠️ Vui lòng nhập User ID (không được để trống).")
+                st.error("⚠️ Vui lòng nhập User ID.")
             elif not hist_user_input.isdigit():
                 st.error("⚠️ Vui lòng nhập User ID là số.")
             else:
@@ -243,31 +219,69 @@ def main():
                 st.markdown("### 🌟 Tổng Quan")
                 st.metric("Đã Đánh Giá", f"{len(df_hist)} phim")
                 st.metric("Điểm Trung Bình", f"{avg_score:.1f} / 5.0")
+                
+                # Thống kê nhanh Top thể loại yêu thích (Text)
+                if not df_hist.empty:
+                    # Tách thể loại để đếm
+                    all_genres = df_hist['genres'].str.split('|').explode()
+                    top_genre = all_genres.value_counts().head(1)
+                    if not top_genre.empty:
+                        st.metric("Thể Loại Hay Xem Nhất", top_genre.index[0], f"{top_genre.values[0]} phim")
+
             elif hist_user_input and hist_user_input.isdigit():
-                st.warning("📭 Không tìm thấy lịch sử đánh giá cho User này.")
+                st.warning("📭 Không tìm thấy lịch sử đánh giá của Người Dùng.")
 
         with col_hist_right:
-            st.subheader(f"📋 Danh sách phim đã xem")
+            st.subheader(f"📊 Phân Tích Gu Điện Ảnh Của Người Dùng")
 
             if history_data:
                 df_hist = pd.DataFrame(history_data)
+                
+                # 1. Tách chuỗi thể loại "Action|Sci-Fi" thành các dòng riêng biệt
+                # Copy để không ảnh hưởng dataframe gốc
+                df_exploded = df_hist.copy()
+                df_exploded['genre_split'] = df_exploded['genres'].str.split('|')
+                df_exploded = df_exploded.explode('genre_split')
+
+                # 2. Tính điểm trung bình theo từng thể loại
+                genre_stats = df_exploded.groupby('genre_split').agg(
+                    Avg_Rating=('rating', 'mean'),
+                    Count=('rating', 'count')
+                ).reset_index()
+
+                # 3. Lọc những thể loại xuất hiện ít (ví dụ < 2 lần) để chart đỡ rối (Optional)
+                # genre_stats = genre_stats[genre_stats['Count'] >= 2]
+
+                # 4. Vẽ Chart: Điểm trung bình theo thể loại
+                base = alt.Chart(genre_stats).encode(
+                    y=alt.Y('genre_split', sort='-x', title=None), # Sắp xếp theo điểm cao nhất
+                    tooltip=['genre_split', alt.Tooltip('Avg_Rating', format='.1f'), 'Count']
+                )
+
+                bars = base.mark_bar().encode(
+                    x=alt.X('Avg_Rating', title='Điểm Trung Bình', scale=alt.Scale(domain=[0, 5])),
+                    color=alt.Color('Avg_Rating', scale=alt.Scale(scheme='viridis'), legend=None)
+                )
+
+                text = base.mark_text(align='left', dx=2).encode(
+                    x='Avg_Rating',
+                    text=alt.Text('Avg_Rating', format='.1f')
+                )
+
+                st.altair_chart((bars + text).properties(height=300, title="Điểm Đánh Giá Trung Bình Theo Thể Loại"), use_container_width=True)
+                
+                st.divider()
+                st.subheader("📋 Chi Tiết Lịch Sử")
+
                 df_hist.reset_index(drop=True, inplace=True)
                 df_hist.index += 1
                 df_hist["STT"] = df_hist.index
                 
-                hist_chart = alt.Chart(df_hist).mark_bar().encode(
-                    x=alt.X('rating:O', title='Số Sao'),
-                    y=alt.Y('count()', title='Số lượng phim'),
-                    color=alt.Color('rating:O', scale=alt.Scale(scheme='magma'), legend=None),
-                    tooltip=['rating', 'count()']
-                ).properties(height=250)
-                st.altair_chart(hist_chart, use_container_width=True)
-
                 cols = ["STT", "movieId", "title", "genres", "rating", "date"]
-                df_hist = df_hist[cols]
+                df_display = df_hist[cols]
 
                 st.dataframe(
-                    df_hist,
+                    df_display,
                     column_config={
                         "STT": st.column_config.NumberColumn("STT", width="small", format="%d"),
                         "movieId": st.column_config.TextColumn("ID", width="small"),
@@ -281,7 +295,7 @@ def main():
                     hide_index=True
                 )
             else:
-                st.info("👈 Nhập User ID để xem dữ liệu.")           
+                st.info("👈 Nhập User ID để xem phân tích.")
 
     # ==========================================
     # TAB 3: DỮ LIỆU HỆ THỐNG
@@ -296,15 +310,43 @@ def main():
             
         if genre_data:
             df_genre = pd.DataFrame(genre_data)
-            
-            # 1. Thêm cột STT cho bảng
             df_genre.reset_index(drop=True, inplace=True)
             df_genre.index += 1
             df_genre["STT"] = df_genre.index
             
-            # 2. Xử lý nhãn biểu đồ
+            # --- [MỚI] THÊM METRICS TỔNG QUAN ---
+            # Tính toán các chỉ số quan trọng
+            total_assignments = df_genre['count'].sum() # Tổng lượt gán
+            top_genre = df_genre.iloc[0]['genre']       # Thể loại top 1 (Do data đã sort)
+            top_count = df_genre.iloc[0]['count']
+            avg_per_genre = df_genre['count'].mean()    # Trung bình
+
+            # Hiển thị 3 cột chỉ số đẹp mắt
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric(
+                    label="Tổng Lượt Phân Loại", 
+                    value=f"{total_assignments:,.0f}",
+                    help="Tổng số lần các bộ phim được gán nhãn thể loại (Một phim có thể thuộc nhiều thể loại)."
+                )
+            with m2:
+                st.metric(
+                    label="Thể Loại Phổ Biến Nhất", 
+                    value=top_genre,
+                    delta=f"{top_count:,.0f} phim"
+                )
+            with m3:
+                st.metric(
+                    label="Trung Bình/Thể Loại", 
+                    value=f"{avg_per_genre:,.0f}",
+                    help="Số lượng phim trung bình cho mỗi thể loại."
+                )
+            
+            st.divider() # Đường kẻ phân cách
+            # ----------------------------------------
+            
             total_movies = df_genre['count'].sum()
-            threshold = total_movies * 0.03 # Ngưỡng 3%
+            threshold = total_movies * 0.03 
             
             df_genre['label'] = df_genre.apply(
                 lambda x: str(x['count']) if x['count'] > threshold else "", 
@@ -324,7 +366,6 @@ def main():
                     tooltip=["genre", "count", alt.Tooltip("count", format=",")]
                 )
                 
-                # Sử dụng cột 'label' đã lọc thay vì 'count' gốc
                 text = base.mark_text(radius=180).encode(
                     text=alt.Text("label"), 
                     order=alt.Order("count", sort="descending"),
@@ -335,8 +376,6 @@ def main():
                 
             with col_data:
                 st.caption("Chi tiết số lượng từng thể loại:")
-                
-                # Reorder để STT lên đầu
                 cols_genre = ["STT", "genre", "count"]
                 df_genre_display = df_genre[cols_genre]
 
@@ -351,12 +390,11 @@ def main():
                     height=500
                 )
         else:
-            st.warning("⚠️ Chưa có dữ liệu thống kê thể loại. Hãy chạy Pipeline để tính toán thống kê.")
+            st.warning("⚠️ Chưa có dữ liệu thống kê thể loại.")
 
         st.divider()
 
         st.subheader("🔎 Chi Tiết Gợi Ý Phim Theo Người Dùng")
-        
         search_query = st.text_input("Tìm kiếm trong bảng (User ID / Tên Phim):", placeholder="Nhập từ khóa...")
             
         with st.spinner("Đang tải dữ liệu bảng..."):
