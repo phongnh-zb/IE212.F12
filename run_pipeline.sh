@@ -62,7 +62,7 @@ ensure_services_running
 # ========================================================
 print_header "BƯỚC 1: NẠP DỮ LIỆU VÀO HBASE (ETL)"
 
-# [CẬP NHẬT] Sử dụng script riêng run_hbase.sh để quản lý gọn gàng
+# Sử dụng script riêng run_hbase.sh để quản lý gọn gàng
 if [ -f "scripts/run_hbase.sh" ]; then
     chmod +x scripts/run_hbase.sh
     ./scripts/run_hbase.sh

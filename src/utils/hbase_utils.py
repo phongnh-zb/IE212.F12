@@ -60,7 +60,6 @@ class HBaseProvider:
             print(f"!!! [HBase Error] {e}")
             return []
 
-    # [FIX] Hàm này đã được cập nhật để trả về đúng cột 'Recommendations (Details)'
     def scan_recommendations(self, limit=100):
         self.connect()
         results = []
@@ -154,7 +153,7 @@ class HBaseProvider:
                         if b':' in key:
                             fam, mid_bytes = key.split(b':', 1)
                             
-                            # [FIX QUAN TRỌNG] Chỉ lấy family 'r'
+                            # Chỉ lấy family 'r'
                             if fam == b'r': 
                                 mid = mid_bytes.decode('utf-8')
                                 rating = val.decode('utf-8')
@@ -239,10 +238,10 @@ class HBaseProvider:
             with self.pool.connection() as connection:
                 # Kiểm tra bảng có tồn tại không
                 tables = [t.decode('utf-8') for t in connection.tables()]
-                if 'genre_stats' not in tables:
+                if config.HBASE_TABLE_GENRE_STATS not in tables:
                     return []
 
-                table = connection.table('genre_stats')
+                table = connection.table(config.HBASE_TABLE_GENRE_STATS)
                 
                 for key, value in table.scan():
                     genre = key.decode('utf-8')
@@ -258,61 +257,4 @@ class HBaseProvider:
             
         except Exception as e:
             print(f"!!! [Get Genre Stats Error] {e}")
-            return []
-        
-    def get_related_movies(self, movie_id):
-        self.connect()
-        results = []
-        try:
-            with self.pool.connection() as connection:
-                # [CẬP NHẬT] Dùng tên bảng từ config
-                target_table = config.HBASE_TABLE_RELATED
-                
-                # 1. Kiểm tra bảng có tồn tại không
-                tables = [t.decode('utf-8') for t in connection.tables()]
-                if target_table not in tables:
-                    return []
-
-                # 2. Lấy chuỗi IDs liên quan
-                rel_table = connection.table(target_table)
-                row = rel_table.row(str(movie_id).encode('utf-8'))
-                
-                if not row or b'info:ids' not in row:
-                    return []
-                
-                # Raw: "100:0.85,200:0.75"
-                raw_str = row[b'info:ids'].decode('utf-8')
-                
-                # Parse ra list: [(100, 0.85), (200, 0.75)]
-                related_items = []
-                target_ids = []
-                
-                for item in raw_str.split(','):
-                    try:
-                        mid, conf = item.split(':')
-                        related_items.append((mid, float(conf)))
-                        target_ids.append(mid.encode('utf-8'))
-                    except: continue
-
-                # 3. Lấy tên phim từ bảng 'movies' (Bulk get)
-                movie_table = connection.table(config.HBASE_TABLE_MOVIES)
-                rows = movie_table.rows(target_ids)
-                
-                # Map: ID -> Title
-                titles_map = {k.decode(): v.get(b'info:title', b'Unknown').decode() for k, v in rows}
-
-                # 4. Format kết quả trả về
-                for mid, conf in related_items:
-                    results.append({
-                        "movieId": mid,
-                        "title": titles_map.get(mid, f"ID:{mid}"),
-                        "confidence": conf
-                    })
-                
-                # Sắp xếp theo độ tin cậy
-                results.sort(key=lambda x: x['confidence'], reverse=True)
-                
-            return results
-        except Exception as e:
-            print(f"!!! [Get Related Movies Error] {e}")
             return []

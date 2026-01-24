@@ -110,7 +110,7 @@ def main(args_model):
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
-    # [FIX QUAN TRỌNG] Tự động xác định đường dẫn tuyệt đối đến file Local
+    # Tự động xác định đường dẫn tuyệt đối đến file Local
     # Không phụ thuộc vào config HDFS để tránh lỗi path duplicate
     data_dir = os.path.join(project_root, 'data')
     

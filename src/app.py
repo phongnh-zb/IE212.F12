@@ -73,7 +73,7 @@ def main():
             st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất.")
             user_input = st.text_input("Nhập ID Người Dùng (User ID):", value="1")
             
-            # [LOGIC MỚI] Kiểm tra đầu vào
+            # Kiểm tra đầu vào
             if not user_input:
                 st.error("⚠️ Vui lòng nhập User ID (không được để trống).")
             elif not user_input.isdigit():
@@ -113,9 +113,9 @@ def main():
                     if val: return f"{float(val):.1f} 👤"
                     return "--"
 
-                df_display["Điểm Của Bạn"] = df_display["ID"].apply(format_my_rating)
+                df_display["Đánh Giá Của User"] = df_display["ID"].apply(format_my_rating)
 
-                cols = ["STT", "ID", "Tên Phim", "Thể Loại", "Điểm Cộng Đồng", "Độ Phù Hợp", "Điểm Của Bạn"]
+                cols = ["STT", "ID", "Tên Phim", "Thể Loại", "Điểm Cộng Đồng", "Độ Phù Hợp", "Đánh Giá Của User"]
                 df_final = df_display[cols]
 
                 event = st.dataframe(
@@ -123,9 +123,9 @@ def main():
                     column_config={
                         "STT": st.column_config.NumberColumn("STT", width="small", format="%d"),
                         "ID": st.column_config.TextColumn("ID", width="small"),
-                        "Điểm Cộng Đồng": st.column_config.NumberColumn(format="%.1f ⭐"),
-                        "Độ Phù Hợp": st.column_config.NumberColumn(format="%.1f 🔥", help="AI dự đoán bạn sẽ thích"),
-                        "Điểm Của Bạn": st.column_config.TextColumn("Điểm Của Bạn", width="small")
+                        "Điểm Cộng Đồng": st.column_config.NumberColumn(width="small", format="%.1f ⭐"),
+                        "Độ Phù Hợp": st.column_config.NumberColumn(width="small", format="%.1f 🔥", help="AI dự đoán bạn sẽ thích"),
+                        "Đánh Giá Của User": st.column_config.TextColumn("Đánh Giá Của User")
                     },
                     width='stretch', 
                     hide_index=True,
@@ -176,7 +176,7 @@ def main():
                     with m3:
                         my_r = selected_movie_data.get('my_rating')
                         val_str = f"{float(my_r):.1f} 👤" if my_r != "Chưa xem" else "--"
-                        st.metric("Điểm Của Bạn", val_str)
+                        st.metric("Đánh Giá Của User", val_str)
                         
                     with st.expander("📝 Xem mô tả nội dung", expanded=True):
                         st.caption(f"Thông tin chi tiết phim '{details['title']}'...")
@@ -227,7 +227,7 @@ def main():
             
             history_data = []
             
-            # [LOGIC MỚI] Kiểm tra đầu vào Tab 2
+            # Kiểm tra đầu vào
             if not hist_user_input:
                 st.error("⚠️ Vui lòng nhập User ID (không được để trống).")
             elif not hist_user_input.isdigit():
@@ -351,7 +351,7 @@ def main():
                     height=500
                 )
         else:
-            st.warning("⚠️ Chưa có dữ liệu thống kê thể loại. Hãy chạy Pipeline Bước 2.")
+            st.warning("⚠️ Chưa có dữ liệu thống kê thể loại. Hãy chạy Pipeline để tính toán thống kê.")
 
         st.divider()
 

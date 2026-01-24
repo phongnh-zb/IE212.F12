@@ -65,8 +65,7 @@ def main():
         
         # 2. NẠP CHO BẢNG GENRE_STATS
         # Giả sử bảng 'genre_stats' đã được tạo bởi init_tables.py
-        GENRE_TABLE = 'genre_stats'
-        load_generic(conn, GENRE_TABLE, 'info', 'count', config.HDFS_OUTPUT_GENRES, "Thống Kê Thể Loại")
+        load_generic(conn, config.HBASE_TABLE_GENRE_STATS, 'info', 'count', config.HDFS_OUTPUT_GENRES, "Thống Kê Thể Loại")
         
         conn.close()
         print("\n🎉 HOÀN TẤT CẬP NHẬT STATS!")

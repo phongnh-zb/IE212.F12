@@ -54,11 +54,11 @@ def main():
 
         # 4. Bảng GENRE_STATS (Kết quả MapReduce Thể loại)
         # info: chứa số lượng
-        create_table_safe(connection, 'genre_stats', {'info': dict()})
+        create_table_safe(connection, config.HBASE_TABLE_GENRE_STATS, {'info': dict()})
         
         # 5. Các bảng phụ khác (Nếu có)
-        create_table_safe(connection, 'tags', {'info': dict()})
-        create_table_safe(connection, 'links', {'info': dict()})
+        create_table_safe(connection, config.HBASE_TABLE_TAGS, {'info': dict()})
+        create_table_safe(connection, config.HBASE_TABLE_LINKS, {'info': dict()})
 
         connection.close()
         print("✅ HOÀN TẤT KHỞI TẠO BẢNG!")

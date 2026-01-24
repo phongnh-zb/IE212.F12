@@ -15,11 +15,12 @@ HDFS_OUTPUT_GENRES = f"{HDFS_BASE_PATH}output_genre_counts"
 
 # HBASE
 HBASE_HOST = '127.0.0.1'
-HBASE_TABLE_MOVIES = 'movies'
+HBASE_TABLE_LINKS = 'links'
 HBASE_TABLE_MOVIES = 'movies'
 HBASE_TABLE_RATINGS = 'ratings'
 HBASE_TABLE_TAGS = 'tags'
 HBASE_TABLE_RECS = 'recommendations'
+HBASE_TABLE_GENRE_STATS = 'genre_stats'
 
 # FILES (CSV)
 LINKS_FILE = "links.csv"
