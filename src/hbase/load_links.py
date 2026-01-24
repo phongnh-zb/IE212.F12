@@ -26,28 +26,29 @@ def main():
              print(f"⚠️ Không tìm thấy file links: {csv_path}")
              return
 
-        batch = table.batch(batch_size=1000)
-        count = 0
-        
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            next(reader) 
-            
-            for row in reader:
-                if len(row) < 3: continue
-                movie_id = row[0]
-                imdb_id = row[1]
-                tmdb_id = row[2]
-
-                batch.put(movie_id.encode('utf-8'), {
-                    b'info:imdbId': imdb_id.encode('utf-8'),
-                    b'info:tmdbId': tmdb_id.encode('utf-8')
-                })
-                count += 1
+        # Dùng Context Manager
+        with table.batch(batch_size=1000) as batch:
+            count = 0
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                next(reader) 
                 
-        batch.send()
+                for row in reader:
+                    if len(row) < 3: continue
+                    movie_id = row[0]
+                    imdb_id = row[1]
+                    tmdb_id = row[2]
+
+                    batch.put(movie_id.encode('utf-8'), {
+                        b'info:imdbId': imdb_id.encode('utf-8'),
+                        b'info:tmdbId': tmdb_id.encode('utf-8')
+                    })
+                    count += 1
+                    if count % 10000 == 0:
+                        print(f"   -> Đã load {count} links...")
+                
         connection.close()
-        print(f"✅ HOÀN TẤT! Đã link {count} movies.")
+        print(f"✅ HOÀN TẤT! Đã load {count} links.")
         
     except Exception as e:
         print(f"❌ Error: {e}")

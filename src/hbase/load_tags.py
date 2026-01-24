@@ -39,20 +39,22 @@ def main():
 
         print(f"📦 Đang ghi tags cho {len(movie_tags)} phim...")
 
-        batch = table.batch(batch_size=1000)
-        count = 0
-        for mid, tags_set in movie_tags.items():
-            top_tags = list(tags_set)[:7] 
-            tags_str = ", ".join(top_tags)
+        # Dùng 'with' để tự động quản lý batch
+        with table.batch(batch_size=1000) as batch:
+            count = 0
+            for mid, tags_set in movie_tags.items():
+                top_tags = list(tags_set)[:7] 
+                tags_str = ", ".join(top_tags)
+                
+                batch.put(str(mid).encode(), {
+                    b'info:tags': tags_str.encode()
+                })
+                count += 1
+                if count % 10000 == 0:
+                        print(f"   -> Đã load {count} dòng tags...")
             
-            batch.put(str(mid).encode(), {
-                b'info:tags': tags_str.encode()
-            })
-            count += 1
-            
-        batch.send()
         connection.close()
-        print(f"✅ HOÀN TẤT! Đã cập nhật tags.")
+        print(f"✅ HOÀN TẤT! Đã load tags cho {count} phim.")
 
     except Exception as e:
         print(f"❌ Error: {e}")

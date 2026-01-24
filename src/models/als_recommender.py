@@ -28,11 +28,10 @@ class ALSRecommender:
         )
 
         # 3. Xây dựng lưới tham số (Parameter Grid) để thử nghiệm
-        # Spark sẽ chạy tổ hợp các trường hợp bên dưới (2 x 2 = 4 trường hợp)
         # Lưu ý: Càng nhiều tham số thì chạy càng lâu
         param_grid = ParamGridBuilder() \
-            .addGrid(als.rank, [10, 50]) \
-            .addGrid(als.regParam, [0.01, 0.1]) \
+            .addGrid(als.rank, [10]) \
+            .addGrid(als.regParam, [0.1]) \
             .build()
 
         # 4. Định nghĩa thước đo đánh giá (RMSE - Root Mean Squared Error)
@@ -43,12 +42,12 @@ class ALSRecommender:
         )
 
         # 5. Thiết lập Cross Validator
-        # numFolds=3: Chia dữ liệu làm 3 phần, train 2 phần test 1 phần (xoay vòng)
+        # numFolds=2: Chia dữ liệu làm 3 phần, train 1 phần test 1 phần (xoay vòng)
         cv = CrossValidator(
             estimator=als,
             estimatorParamMaps=param_grid,
             evaluator=evaluator,
-            numFolds=3
+            numFolds=2 
         )
 
         # 6. Bắt đầu chạy (FIT)

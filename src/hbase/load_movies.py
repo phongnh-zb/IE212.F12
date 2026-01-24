@@ -4,7 +4,7 @@ import sys
 
 import happybase
 
-# --- SETUP PATH (Thay thế common.py) ---
+# --- SETUP PATH ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
@@ -25,30 +25,28 @@ def main():
         col_title = b'info:title'
         col_genres = b'info:genres'
 
-        batch = table.batch(batch_size=1000)
-        
-        with open(csv_file_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            next(reader) # Bỏ qua header
-            
-            count = 0
-            for row in reader:
-                if len(row) < 3: continue
-                movie_id = row[0]
-                title = row[1]
-                genres = row[2]
+        with table.batch(batch_size=1000) as batch:
+            with open(csv_file_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                next(reader) 
                 
-                batch.put(movie_id.encode('utf-8'), {
-                    col_title: title.encode('utf-8'),
-                    col_genres: genres.encode('utf-8')
-                })
-                count += 1
-                if count % 2000 == 0:
-                    print(f"   -> Đã load {count} phim...")
+                count = 0
+                for row in reader:
+                    if len(row) < 3: continue
+                    movie_id = row[0]
+                    title = row[1]
+                    genres = row[2]
+                    
+                    batch.put(movie_id.encode('utf-8'), {
+                        col_title: title.encode('utf-8'),
+                        col_genres: genres.encode('utf-8')
+                    })
+                    count += 1
+                    if count % 10000 == 0:
+                        print(f"   -> Đã load {count} movies...")
 
-        batch.send()
         connection.close()
-        print(f"✅ HOÀN TẤT! Tổng cộng {count} phim đã vào HBase.")
+        print(f"✅ HOÀN TẤT! Đã load {count} movies.")
 
     except Exception as e:
         print(f"❌ Error: {e}")

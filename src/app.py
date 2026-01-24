@@ -105,7 +105,7 @@ def main():
                     "avg_rating": "Điểm Cộng Đồng", "pred_rating": "Độ Phù Hợp"
                 })
                 
-                df_display["Điểm Cộng Đồng"] = pd.to_numeric(df_display["Điểm Cộng Đồng"], errors='coerce').fillna(0)
+                df_display["Điểm Cộng Đồng"] = df_display["Điểm Cộng Đồng"].astype(float)
                 df_display["Độ Phù Hợp"] = pd.to_numeric(df_display["Độ Phù Hợp"], errors='coerce').clip(0, 5)
 
                 def format_my_rating(mid):

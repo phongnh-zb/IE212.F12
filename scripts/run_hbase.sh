@@ -28,17 +28,17 @@ fi
 
 # 1. Nạp Movies
 echo "-----------------------------------"
-echo "1. Đang nạp dữ liệu 'movies'..."
+echo "1. Đang load dữ liệu 'movies'..."
 python3 src/hbase/load_movies.py
 
 # 2. Nạp Ratings
 echo "-----------------------------------"
-echo "2. Đang nạp dữ liệu 'ratings'..."
+echo "2. Đang load dữ liệu 'ratings'..."
 python3 src/hbase/load_ratings.py
 
 # 3. Nạp Tags (Nếu có file)
 echo "-----------------------------------"
-echo "3. Đang nạp dữ liệu 'tags'..."
+echo "3. Đang load dữ liệu 'tags'..."
 if [ -f "src/hbase/load_tags.py" ]; then
     python3 src/hbase/load_tags.py
 else
@@ -47,7 +47,7 @@ fi
 
 # 4. Nạp Links (Nếu có file)
 echo "-----------------------------------"
-echo "4. Đang nạp dữ liệu 'links'..."
+echo "4. Đang load dữ liệu 'links'..."
 if [ -f "src/hbase/load_links.py" ]; then
     python3 src/hbase/load_links.py
 else
