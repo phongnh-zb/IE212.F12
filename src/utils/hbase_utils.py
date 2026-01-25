@@ -25,16 +25,22 @@ class HBaseProvider:
             # Autoconnect=True giúp quản lý socket tốt hơn
             self.pool = happybase.ConnectionPool(size=3, host=self.host, timeout=30000, autoconnect=True)
 
-    def get_recommendations(self, user_id):
+    def get_recommendations(self, user_id, model_name=None):
         self.connect()
         results = []
         try:
             with self.pool.connection() as connection:
                 rec_table = connection.table(config.HBASE_TABLE_RECS)
                 row = rec_table.row(str(user_id).encode('utf-8'))
-                if not row or b'info:movieIds' not in row: return []
                 
-                raw_string = row[b'info:movieIds'].decode('utf-8')
+                # Determine column to use
+                col_key = b'info:movieIds'
+                if model_name:
+                    col_key = f"info:{model_name}".lower().encode('utf-8')
+                
+                if not row or col_key not in row: return []
+                
+                raw_string = row[col_key].decode('utf-8')
                 rec_items = []
                 movie_ids = []
                 for item in raw_string.split(','):
