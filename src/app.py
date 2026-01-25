@@ -45,10 +45,14 @@ def load_all_system_data(limit=100):
     if provider: return provider.scan_recommendations(limit=limit)
     return []
 
-@st.cache_data(ttl=600)
 def load_genre_stats():
     provider = get_provider()
     if provider: return provider.get_genre_stats()
+    return []
+
+def load_all_metrics():
+    provider = get_provider()
+    if provider: return provider.get_all_model_metrics()
     return []
 
 # --- UI MAIN ---
@@ -57,7 +61,7 @@ def main():
     st.caption("Phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa.")
 
     # TABS
-    tab1, tab2, tab3 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống", "⚖️ So Sánh Model"])
 
     # ==========================================
     # TAB 1: USER VIEW (Gợi Ý)
@@ -354,25 +358,14 @@ def main():
             )
             
             col_chart, col_data = st.columns([1, 1])
-            
             with col_chart:
-                base = alt.Chart(df_genre).encode(
-                    theta=alt.Theta("count", stack=True)
-                )
+                chart = alt.Chart(df_genre).mark_arc(outerRadius=140).encode(
+                    theta=alt.Theta("count:Q"),
+                    color=alt.Color("genre:N", legend=alt.Legend(title="Thể Loại")),
+                    tooltip=["genre:N", "count:Q"]
+                ).properties(height=400)
                 
-                pie = base.mark_arc(outerRadius=160).encode(
-                    color=alt.Color("genre", legend=alt.Legend(title="Thể Loại", orient='left')),
-                    order=alt.Order("count", sort="descending"),
-                    tooltip=["genre", "count", alt.Tooltip("count", format=",")]
-                )
-                
-                text = base.mark_text(radius=180).encode(
-                    text=alt.Text("label"), 
-                    order=alt.Order("count", sort="descending"),
-                    color=alt.value("black")  
-                )
-                
-                st.altair_chart((pie + text).properties(height=500), use_container_width=True)
+                st.altair_chart(chart, use_container_width=True)
                 
             with col_data:
                 st.caption("Chi tiết số lượng từng thể loại:")
@@ -437,6 +430,75 @@ def main():
                 st.warning(f"🚫 Không tìm thấy kết quả nào khớp với: '{search_query}'")
         else:
             st.info("📭 Hệ thống chưa có dữ liệu.")
+            
+    # ==========================================
+    # TAB 4: SO SÁNH MODEL
+    # ==========================================
+    with tab4:
+        st.header("⚖️ So Sánh Hiệu Năng Các Model")
+        st.info("Biểu đồ so sánh RMSE và MAE của các mô hình đã huấn luyện (Dữ liệu từ HBase).")
+        
+        metrics_data = load_all_metrics()
+        if metrics_data:
+            df_metrics = pd.DataFrame(metrics_data)
+            
+            # Show raw metrics table first for visibility
+            st.subheader("📋 Chi Tiết Số Liệu")
+            st.dataframe(df_metrics, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("📉 RMSE (Lower is better)")
+                rmse_chart = alt.Chart(df_metrics).mark_bar().encode(
+                    x=alt.X('model:N', title='Model'),
+                    y=alt.Y('rmse:Q', title='RMSE'),
+                    color=alt.Color('model:N', legend=None),
+                    tooltip=['model', 'rmse']
+                ).properties(height=300)
+                st.altair_chart(rmse_chart, use_container_width=True)
+                
+            with c2:
+                st.subheader("📉 MAE (Lower is better)")
+                mae_chart = alt.Chart(df_metrics).mark_bar().encode(
+                    x=alt.X('model:N', title='Model'),
+                    y=alt.Y('mae:Q', title='MAE'),
+                    color=alt.Color('model:N', legend=None),
+                    tooltip=['model', 'mae']
+                ).properties(height=300)
+                st.altair_chart(mae_chart, use_container_width=True)
+                
+            st.divider()
+            
+            # Phần dự đoán thủ công
+            st.subheader("🔮 Dự Đoán Theo Model Tùy Chọn")
+            st.caption("Lấy kết quả pre-calculated từ HBase cho model được chọn.")
+            col_pred1, col_pred2 = st.columns([1, 2])
+            
+            with col_pred1:
+                selected_model = st.selectbox("Chọn Model để dự đoán:", ["als", "cbf", "hybrid"])
+                u_id = st.text_input("Nhập User ID để test:", value="1")
+                btn_predict = st.button("🚀 Chạy Dự Đoán")
+                
+            with col_pred2:
+                if btn_predict:
+                    st.write(f"Kết quả dự đoán từ model **{selected_model.upper()}** cho User **{u_id}**:")
+                    
+                    # Gọi get_recommendations với model_name
+                    test_recs = get_provider().get_recommendations(u_id, model_name=selected_model)
+                    
+                    if test_recs:
+                        st.success(f"Tìm thấy {len(test_recs)} phim gợi ý.")
+                        df_pred = pd.DataFrame(test_recs)
+                        st.dataframe(df_pred[["movieId", "title", "genres", "pred_rating"]].rename(columns={
+                            "movieId": "ID", "title": "Tên Phim", "genres": "Thể Loại", "pred_rating": "Điểm Dự Đoán"
+                        }), hide_index=True)
+                    else:
+                        st.warning(f"Không tìm thấy dữ liệu cho User {u_id} với model {selected_model.upper()}.")
+                        st.info("💡 Bạn có thể cần chạy pipeline training cho model này trước.")
+        else:
+            st.warning("⚠️ Chưa có dữ liệu metrics trong HBase. Vui lòng chạy pipeline training.")
             
 if __name__ == "__main__":
     main()

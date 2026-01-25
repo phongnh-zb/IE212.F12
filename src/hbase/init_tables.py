@@ -56,7 +56,10 @@ def main():
         # info: chứa số lượng
         create_table_safe(connection, config.HBASE_TABLE_GENRE_STATS, {'info': dict()})
         
-        # 5. Các bảng phụ khác (Nếu có)
+        # 5. Bảng MODEL_METRICS (Lưu RMSE, MAE)
+        create_table_safe(connection, config.HBASE_TABLE_METRICS, {'info': dict()})
+
+        # 6. Các bảng phụ khác (Nếu có)
         create_table_safe(connection, config.HBASE_TABLE_TAGS, {'info': dict()})
 
         connection.close()

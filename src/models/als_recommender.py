@@ -10,12 +10,9 @@ class ALSRecommender:
         self.spark = spark
         self.best_model = None  # Lưu model tốt nhất sau khi CV
 
-    def train(self, df_ratings):
+    def train(self, train_data):
         print("   [ALS] Bắt đầu quá trình Cross Validation (Hyperparameter Tuning)...")
         start_time = time.time()
-
-        # 1. Chia tập dữ liệu (80% train, 20% test để đánh giá cuối cùng)
-        train_data, test_data = df_ratings.randomSplit([0.8, 0.2], seed=42)
 
         # 2. Khởi tạo ALS Estimator
         # coldStartStrategy="drop": Bỏ qua các user/movie chưa từng xuất hiện trong tập train để tránh lỗi NaN
@@ -61,12 +58,25 @@ class ALSRecommender:
         best_rank = self.best_model.rank
         best_reg = self.best_model._java_obj.parent().getRegParam()
         print(f"   [ALS] ✅ Tìm thấy tham số tốt nhất: Rank={best_rank}, RegParam={best_reg}")
-
-        # 8. Đánh giá trên tập Test độc lập
-        predictions = self.best_model.transform(test_data)
-        rmse = evaluator.evaluate(predictions)
-        print(f"   [ALS] 📊 RMSE trên tập Test: {rmse:.4f}")
         print(f"   [ALS] Thời gian training: {time.time() - start_time:.2f}s")
+        return self
+
+    def evaluate(self, test_data):
+        if not self.best_model:
+            print("   [ALS] ❌ Model chưa (hoặc thất bại) training.")
+            return {"rmse": float('inf'), "mae": float('inf')}
+            
+        print("   [ALS] Đang đánh giá trên tập Test...")
+        predictions = self.best_model.transform(test_data)
+        
+        evaluator_rmse = RegressionEvaluator(metricName="rmse", labelCol="rating", predictionCol="prediction")
+        evaluator_mae = RegressionEvaluator(metricName="mae", labelCol="rating", predictionCol="prediction")
+        
+        rmse = evaluator_rmse.evaluate(predictions)
+        mae = evaluator_mae.evaluate(predictions)
+        
+        print(f"   [ALS] 📊 Kết quả: RMSE={rmse:.4f}, MAE={mae:.4f}")
+        return {"rmse": rmse, "mae": mae}
 
     def get_recommendations(self, k=10):
         # recommendForAllUsers(k) trả về cột 'recommendations' chứa mảng các struct (movieId, rating)

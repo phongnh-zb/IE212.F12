@@ -20,6 +20,7 @@ HBASE_TABLE_RATINGS = 'ratings'
 HBASE_TABLE_TAGS = 'tags'
 HBASE_TABLE_RECS = 'recommendations'
 HBASE_TABLE_GENRE_STATS = 'genre_stats'
+HBASE_TABLE_METRICS = 'model_metrics'
 
 # FILES (CSV)
 MOVIES_FILE = "movies.csv"

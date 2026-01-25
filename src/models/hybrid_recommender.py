@@ -1,4 +1,4 @@
-from pyspark.sql.functions import (col, collect_list, count, desc, explode,
+from pyspark.sql.functions import (avg, col, collect_list, count, desc, explode,
                                    row_number, struct, when)
 from pyspark.sql.window import Window
 
@@ -19,14 +19,15 @@ class HybridRecommender:
         # Biến lưu danh sách phim "hợp lệ" (Quality Filter)
         self.valid_movies_df = None
 
-    def train(self, df_ratings, df_movies):
-        print("   -> [Hybrid] Training Sub-models...")
-        
-        # 1. Train ALS
-        self.als.train(df_ratings)
-        
-        # 2. Train CBF
-        self.cbf.train(df_ratings, df_movies)
+    def train(self, df_ratings, df_movies, train_submodels=True):
+        if train_submodels:
+            print("   -> [Hybrid] Training Sub-models...")
+            # 1. Train ALS
+            self.als.train(df_ratings)
+            # 2. Train CBF
+            self.cbf.train(df_ratings, df_movies)
+        else:
+            print("   -> [Hybrid] Using pre-trained sub-models (Skipping re-training).")
         
         # 3. Tạo bộ lọc phim chất lượng (Quality Filter)
         # Chỉ những phim có ít nhất 10 lượt đánh giá mới được đưa vào danh sách Hybrid
@@ -38,6 +39,52 @@ class HybridRecommender:
         
         print("   -> [Hybrid] Training Done.")
         return self
+
+    def evaluate(self, test_data):
+        from pyspark.ml.evaluation import RegressionEvaluator
+        print("   [Hybrid] Đang đánh giá trên tập Test...")
+        
+        # 1. ALS Prediction
+        try:
+            als_preds = self.als.best_model.transform(test_data).select(
+                col("userId"), col("movieId"), col("prediction").alias("pred_als")
+            )
+        except Exception as e:
+             print(f"   [Hybrid] Lỗi khi dự đoán bằng ALS: {e}. Sử dụng giá trị mặc định.")
+             als_preds = test_data.select(col("userId"), col("movieId"), when(col("userId").isNotNull(), 3.0).alias("pred_als"))
+
+        # 2. CBF Prediction
+        test_with_profile = test_data.join(self.cbf.user_profiles, "userId", "left")
+        cbf_preds = test_with_profile.join(self.cbf.movie_profiles, 
+            (test_with_profile.movieId == self.cbf.movie_profiles.movieId) & 
+            (test_with_profile.top_genre == self.cbf.movie_profiles.genre), 
+            "left") \
+            .select(
+                test_with_profile["userId"], 
+                test_with_profile["movieId"], 
+                col("avg_rating").alias("pred_cbf")
+            ).groupBy(test_with_profile["userId"], test_with_profile["movieId"]).agg(avg("pred_cbf").alias("pred_cbf")).na.fill(3.0)
+
+        # 3. Combine
+        combined = test_data.join(als_preds, ["userId", "movieId"], "left") \
+                            .join(cbf_preds, ["userId", "movieId"], "left")
+                            
+        final_preds = combined.withColumn("prediction", 
+            when(col("pred_als").isNotNull() & col("pred_cbf").isNotNull(), 
+                 col("pred_als") * self.WEIGHT_ALS + col("pred_cbf") * self.WEIGHT_CBF)
+            .when(col("pred_als").isNotNull(), col("pred_als"))
+            .when(col("pred_cbf").isNotNull(), col("pred_cbf"))
+            .otherwise(3.0)
+        )
+
+        evaluator_rmse = RegressionEvaluator(metricName="rmse", labelCol="rating", predictionCol="prediction")
+        evaluator_mae = RegressionEvaluator(metricName="mae", labelCol="rating", predictionCol="prediction")
+        
+        rmse = evaluator_rmse.evaluate(final_preds)
+        mae = evaluator_mae.evaluate(final_preds)
+        
+        print(f"   [Hybrid] 📊 Kết quả: RMSE={rmse:.4f}, MAE={mae:.4f}")
+        return {"rmse": rmse, "mae": mae}
 
     def get_recommendations(self, k=10):
         print(f"   -> [Hybrid] Generating Top-{k} Recommendations...")
