@@ -64,9 +64,15 @@ class ALSRecommender:
 
         # 8. Đánh giá trên tập Test độc lập
         predictions = self.best_model.transform(test_data)
-        rmse = evaluator.evaluate(predictions)
-        print(f"   [ALS] 📊 RMSE trên tập Test: {rmse:.4f}")
+        metrics = {}
+        metrics['rmse'] = evaluator.evaluate(predictions)
+        
+        evaluator_mae = RegressionEvaluator(metricName="mae", labelCol="rating", predictionCol="prediction")
+        metrics['mae'] = evaluator_mae.evaluate(predictions)
+
+        print(f"   [ALS] 📊 RMSE: {metrics['rmse']:.4f}, MAE: {metrics['mae']:.4f}")
         print(f"   [ALS] Thời gian training: {time.time() - start_time:.2f}s")
+        return metrics
 
     def get_recommendations(self, k=10):
         # recommendForAllUsers(k) trả về cột 'recommendations' chứa mảng các struct (movieId, rating)

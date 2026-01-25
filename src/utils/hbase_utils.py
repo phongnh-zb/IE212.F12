@@ -233,3 +233,51 @@ class HBaseProvider:
             print(f"!!! [HBase Error - scan_recommendations] {e}")
             self.pool = None # Reset pool
             return []
+
+    def save_model_metrics(self, model_name, metrics):
+        """
+        Lưu metrics (RMSE, MAE) của model vào HBase.
+        metrics: dict {'rmse': float, 'mae': float}
+        """
+        self.connect()
+        try:
+            with self.pool.connection() as connection:
+                table = connection.table(config.HBASE_TABLE_METRICS)
+                row_key = model_name.encode()
+                data = {
+                    b'info:rmse': str(metrics.get('rmse', 0.0)).encode(),
+                    b'info:mae': str(metrics.get('mae', 0.0)).encode(),
+                    b'info:updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S').encode()
+                }
+                table.put(row_key, data)
+                print(f"✅ [HBase] Saved metrics for {model_name}")
+        except Exception as e:
+            print(f"!!! [HBase Error - save_model_metrics] {e}")
+            self.pool = None
+
+    def get_all_model_metrics(self):
+        """
+        Lấy tất cả metrics của các model để hiển thị dashboard.
+        """
+        self.connect()
+        results = []
+        try:
+            with self.pool.connection() as connection:
+                # Kiểm tra xem bảng có tồn tại không
+                tables = [t.decode('utf-8') for t in connection.tables()]
+                if config.HBASE_TABLE_METRICS not in tables:
+                    return []
+                
+                table = connection.table(config.HBASE_TABLE_METRICS)
+                for key, data in table.scan():
+                    results.append({
+                        "model": key.decode('utf-8'),
+                        "rmse": float(data.get(b'info:rmse', b'0').decode('utf-8')),
+                        "mae": float(data.get(b'info:mae', b'0').decode('utf-8')),
+                        "updated_at": data.get(b'info:updated_at', b'--').decode('utf-8')
+                    })
+            return results
+        except Exception as e:
+            print(f"!!! [HBase Error - get_all_model_metrics] {e}")
+            self.pool = None
+            return []

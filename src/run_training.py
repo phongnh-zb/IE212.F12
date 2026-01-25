@@ -88,28 +88,50 @@ def run_single_model(spark, model_type, df_ratings, df_movies):
         
     if df_recs:
         print(f">>> [CACHING] Đang tính toán kết quả cuối cùng cho {model_type.upper()}...")
-        
-        # Điều này giúp tránh việc Spark phải tính lại toàn bộ logic khi có lỗi mạng
         df_recs.cache()
         try:
-            total_recs = df_recs.count() # Ép Spark chạy tính toán ngay lập tức
+            total_recs = df_recs.count()
             print(f">>> [READY] Đã sẵn sàng lưu {total_recs} users vào HBase.")
             
             if total_recs > 0:
                 print(f">>> [SAVING] Đang ghi xuống HBase (Table: {config.HBASE_TABLE_RECS})...")
-                # Bỏ coalesce(1) nếu dữ liệu > 100k dòng để tận dụng ghi song song
                 df_recs.foreachPartition(lambda iter: worker_save_recs(iter, config.HBASE_TABLE_RECS))
                 print(f">>> [DONE] Hoàn tất {model_type.upper()}.")
             else:
                 print(">>> [WARN] Model chạy xong nhưng không tìm thấy gợi ý nào.")
-                
         except Exception as e:
             print(f"❌ [CRITICAL ERROR] Lỗi trong quá trình tính toán/lưu trữ: {e}")
         finally:
-            df_recs.unpersist() # Giải phóng RAM
-            
+            df_recs.unpersist()
     else:
         print(f">>> [SKIP] Model {model_type} không trả về kết quả.")
+
+def run_training_and_evaluate(spark, model_type, df_ratings, df_movies):
+    """
+    Chạy model và lưu metrics vào HBase.
+    """
+    print(f"\n>>> [TRAINING] Đang chạy Model: {model_type.upper()}...")
+    df_ratings.createOrReplaceTempView("ratings")
+    
+    metrics = {}
+    recommender = None
+    
+    if model_type == "als":
+        recommender = ALSRecommender(spark)
+        metrics = recommender.train(df_ratings)
+    elif model_type == "cbf":
+        recommender = ContentBasedRecommender(spark)
+        metrics = recommender.train(df_ratings, df_movies)
+    elif model_type == "hybrid":
+        recommender = HybridRecommender(spark)
+        metrics = recommender.train(df_ratings, df_movies)
+        
+    # Lưu metrics vào HBase
+    from src.utils.hbase_utils import HBaseProvider
+    provider = HBaseProvider()
+    provider.save_model_metrics(model_type, metrics)
+    
+    return recommender, metrics
 
 # ==============================================================================
 # 3. MAIN
@@ -162,14 +184,43 @@ def main(args_model):
     # --- LOGIC CHẠY TỐI ƯU ---
 
     if args_model == "all":
-        # Nếu chọn 'all', mặc định chạy HYBRID vì nó là model tốt nhất
-        # và đã bao gồm logic của ALS + CBF.
-        print(">>> Mode 'ALL' detected: Chạy Hybrid Model (Best Performance)...")
-        run_single_model(spark, "hybrid", df_ratings, df_movies)
+        print(">>> Mode 'ALL' detected: Chạy tất cả các Model để tìm cái tốt nhất...")
+        
+        results = {}
+        # 1. Chạy ALS
+        als_model, als_metrics = run_training_and_evaluate(spark, "als", df_ratings, df_movies)
+        results["als"] = (als_model, als_metrics)
+        
+        # 2. Chạy CBF
+        cbf_model, cbf_metrics = run_training_and_evaluate(spark, "cbf", df_ratings, df_movies)
+        results["cbf"] = (cbf_model, cbf_metrics)
+        
+        # 3. Chạy Hybrid
+        hybrid_model, hybrid_metrics = run_training_and_evaluate(spark, "hybrid", df_ratings, df_movies)
+        results["hybrid"] = (hybrid_model, hybrid_metrics)
+        
+        # Tìm Model tốt nhất dựa trên RMSE
+        best_model_name = min(results, key=lambda k: results[k][1]['rmse'])
+        print(f"\n🏆 [WINNER] Model tốt nhất là: {best_model_name.upper()} (RMSE: {results[best_model_name][1]['rmse']:.4f})")
+        
+        # Chỉ lưu recommendations của model tốt nhất
+        print(f">>> [SAVING] Đang lưu kết quả của model tốt nhất ({best_model_name.upper()}) vào HBase...")
+        best_recommender = results[best_model_name][0]
+        df_recs = best_recommender.get_recommendations(k=10)
+        
+        if df_recs:
+            df_recs.cache()
+            df_recs.foreachPartition(lambda iter: worker_save_recs(iter, config.HBASE_TABLE_RECS))
+            df_recs.unpersist()
             
     elif args_model in ["als", "cbf", "hybrid"]:
-        # Nếu user muốn chạy test riêng lẻ từng cái
-        run_single_model(spark, args_model, df_ratings, df_movies)
+        # Chạy model đơn lẻ
+        model, metrics = run_training_and_evaluate(spark, args_model, df_ratings, df_movies)
+        df_recs = model.get_recommendations(k=10)
+        if df_recs:
+            df_recs.cache()
+            df_recs.foreachPartition(lambda iter: worker_save_recs(iter, config.HBASE_TABLE_RECS))
+            df_recs.unpersist()
 
     print("\n>>> ALL TASKS FINISHED SUCCESSFULLY!")
     spark.stop()

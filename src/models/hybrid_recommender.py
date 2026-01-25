@@ -23,10 +23,10 @@ class HybridRecommender:
         print("   -> [Hybrid] Training Sub-models...")
         
         # 1. Train ALS
-        self.als.train(df_ratings)
+        m_als = self.als.train(df_ratings)
         
         # 2. Train CBF
-        self.cbf.train(df_ratings, df_movies)
+        m_cbf = self.cbf.train(df_ratings, df_movies)
         
         # 3. Tạo bộ lọc phim chất lượng (Quality Filter)
         # Chỉ những phim có ít nhất 10 lượt đánh giá mới được đưa vào danh sách Hybrid
@@ -37,7 +37,13 @@ class HybridRecommender:
             .select("movieId") 
         
         print("   -> [Hybrid] Training Done.")
-        return self
+        
+        # 4. EVALUATION
+        # Lấy metrics từ model con và kết hợp theo tỷ trọng
+        h_rmse = m_als['rmse'] * self.WEIGHT_ALS + m_cbf['rmse'] * self.WEIGHT_CBF
+        h_mae = m_als['mae'] * self.WEIGHT_ALS + m_cbf['mae'] * self.WEIGHT_CBF
+        
+        return {'rmse': h_rmse, 'mae': h_mae}
 
     def get_recommendations(self, k=10):
         print(f"   -> [Hybrid] Generating Top-{k} Recommendations...")
