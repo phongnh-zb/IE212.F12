@@ -184,8 +184,8 @@ def main():
                 if metrics:
                     df_m = pd.DataFrame(metrics)
                     chart_m = alt.Chart(df_m).mark_line(point=True, color='#e74c3c').encode(
-                        # labelAngle=0 cho tên model nằm ngang chuyên nghiệp
-                        x=alt.X('model:N', title='Mô Hình', axis=alt.Axis(labelAngle=0)),
+              
+                        x=alt.X('model:N', title='Mô hình', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('rmse:Q', title='$RMSE$', scale=alt.Scale(domain=[0.8, 1.2])),
                     ).properties(height=CHART_HEIGHT)
                     st.altair_chart(chart_m, use_container_width=True)
