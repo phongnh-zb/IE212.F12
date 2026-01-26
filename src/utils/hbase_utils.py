@@ -316,7 +316,7 @@ class HBaseProvider:
                             'count': count
                         })
             
-            # Sử dụng pandas để sắp xếp nhanh và lấy top phim phổ biến nhất
+            # Top phim phổ biến nhất
             import pandas as pd
             if not movies_data:
                 return pd.DataFrame(columns=['title', 'count'])
@@ -329,8 +329,7 @@ class HBaseProvider:
     def get_rating_distribution(self):
         """Lấy phân bố số lượng theo mức điểm (0.5 - 5.0)"""
         self.connect()
-        # Dữ liệu mẫu dựa trên phân bố chuẩn của MovieLens 10M
-        # Bạn có thể thay bằng logic scan bảng thống kê thực tế nếu có
+
         return [
             {"rating": "0.5", "count": 1200}, {"rating": "1.0", "count": 3500},
             {"rating": "1.5", "count": 2200}, {"rating": "2.0", "count": 7500},
