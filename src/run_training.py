@@ -1,7 +1,6 @@
 import argparse
 import os
 import sys
-import time
 
 # Import Spark
 from pyspark.sql import SparkSession
@@ -197,7 +196,6 @@ def main(args_model):
 
     best_model_name = None
     best_rmse = float('inf')
-    best_recommender = None
 
     # Khởi tạo objects và train/eval
     trained_models = {}
@@ -258,11 +256,34 @@ def main(args_model):
     print("╚══════════╩══════════════╩══════════════╝")
     
     print(f"\n🏆 WINNER: {best_model_name.upper()} (RMSE: {best_rmse:.4f})")
-    # --- SAVE METRICS TO HBASE ---
+    
+    # --- SAVE METRICS & LATEST RUN INFO TO HBASE ---
+    from datetime import datetime
+
     from src.utils.hbase_utils import HBaseProvider
     provider = HBaseProvider()
+
+    # 1. Lưu metrics của từng model như bình thường
     for m_name, vals in metrics_log.items():
         provider.save_model_metrics(m_name, vals)
+
+    # 2. Lưu thông tin lần chạy LATEST_RUN
+    # Chúng ta dùng một RowKey đặc biệt là 'LATEST_RUN' để lưu thông tin này.
+    print(f"\n>>> [HBASE] Saving LATEST_RUN information for WINNER: {best_model_name.upper()}...")
+    
+    latest_run_data = {
+        'b:winner_model': best_model_name,
+        'b:rmse': metrics_log[best_model_name]['rmse'],
+        'b:mae': metrics_log[best_model_name]['mae'],
+        'b:timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    # Tận dụng hàm save_model_metrics với một chút tùy biến
+    # Truyền dict data trực tiếp thay vì dict metrics lồng nhau
+    try:
+        provider.save_model_metrics('LATEST_RUN', latest_run_data, is_raw_data=True)
+    except Exception as e:
+        print(f"❌ [ERROR] Không thể lưu thông tin LATEST_RUN: {e}")
     
     # --- GENERATE & SAVE TO HBASE FOR ALL MODELS ---
     print("\n>>> [FINALIZING] Saving recommendations for all models to HBase...")

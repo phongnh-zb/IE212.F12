@@ -1,49 +1,10 @@
 import os
 import sys
+from datetime import datetime
 
 import altair as alt
 import pandas as pd
 import streamlit as st
-
-from fpdf import FPDF
-from datetime import datetime
-
-def generate_pdf_report(metrics_data, genre_data):
-    pdf = FPDF()
-    pdf.add_page()
-    
-    # --- TIÊU ĐỀ ---
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="BAO CAO TONG QUAN HE THONG GOI Y PHIM", ln=True, align='C')
-    pdf.set_font("Arial", size=10)
-    pdf.cell(200, 10, txt=f"Ngay xuat: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='C')
-    pdf.ln(10)
-
-    # --- 1. THONG KE QUY MO (BIG DATA) ---
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="1. Quy mo Du lieu (MovieLens 10M Dataset):", ln=True)
-    pdf.set_font("Arial", size=11)
-    # Trích xuất dữ liệu từ thực tế hệ thống
-    pdf.cell(200, 8, txt=f"- Tong so Ratings da xu ly: 100,836", ln=True)
-    pdf.cell(200, 8, txt=f"- Tong so Phim trong kho: 9,742", ln=True)
-    pdf.cell(200, 8, txt=f"- So luong nguoi dung: 610", ln=True)
-    pdf.ln(5)
-
-    # --- 2. HIEU NANG MO HINH ---
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="2. Ket qua Huan luyen va Danh gia (Accuracy):", ln=True)
-    pdf.set_font("Arial", size=11)
-    if metrics_data:
-        for m in metrics_data:
-            model_name = m['model'].upper()
-            pdf.cell(200, 8, txt=f"- Model {model_name}: RMSE = {m['rmse']:.4f}, MAE = {m['mae']:.4f}", ln=True)
-    
-    # --- 3. CONG THUC TOAN HOC (Latex-style) ---
-    pdf.ln(5)
-    pdf.set_font("Arial", 'I', 10)
-    pdf.multi_cell(0, 8, txt="Ghi chu: RMSE (Root Mean Square Error) duoc tinh theo cong thuc can bac hai cua trung binh binh phuong sai so.")
-
-    return bytes(pdf.output())
 
 # --- SETUP PATH ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -92,21 +53,29 @@ def load_user_history(user_id):
     if provider: return provider.get_user_history_detailed(user_id)
     return []
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)
 def load_all_system_data(limit=100):
     provider = get_provider()
     if provider: return provider.scan_recommendations(limit=limit)
     return []
 
+@st.cache_data(ttl=600)
 def load_genre_stats():
     provider = get_provider()
     if provider: return provider.get_genre_stats()
     return []
 
+@st.cache_data(ttl=600)
 def load_all_metrics():
     provider = get_provider()
     if provider: return provider.get_all_model_metrics()
     return []
+
+@st.cache_data(ttl=600)
+def load_latest_run_info():
+    provider = get_provider()
+    if provider: return provider.get_latest_run_info()
+    return {}
 
 # --- UI MAIN ---
 def main():
@@ -117,36 +86,53 @@ def main():
     tab0, tab1, tab2, tab3, tab4 = st.tabs(["🏠 Tổng Quan", "🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống", "⚖️ So Sánh Model"])
 
     # ==========================================
-    # TAB 0: TỔNG QUAN (OVERVIEW) - BẢN FULL OPTION
+    # TAB 0: TỔNG QUAN (OVERVIEW)
     # ==========================================
     with tab0:
-        st.header("🏛️ Tổng Quan Hệ Thống")
+        st.header("📊 Hệ Thống Gợi Ý Phim (MovieLens 10M Dataset)")
         
-        # HÀNG 1: Metric Cards
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Người Dùng", "610", "👥")
-        m2.metric("Tổng Số Phim", "9,742", "🎬")
-        m3.metric("Lượt Đánh Giá", "100,836", "⭐")
-        m4.metric("Độ Chính Xác ($RMSE$)", "0.8973", "-0.05", delta_color="inverse")
+        # --- CẬP NHẬT PHẦN NÀY ---
+        # 1. Gọi hàm lấy dữ liệu thực tế từ HBase
+        with st.spinner('Đang tải số liệu tổng quan từ hệ thống...'):
+            overview_metrics = get_provider().get_system_overview()
+            latest_run = get_provider().get_latest_run_info()
+            
+        # 2. Hiển thị các metric bằng dữ liệu vừa lấy được
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Sử dụng hàm st.metric để hiển thị đẹp mắt
+        col1.metric("Người Dùng", overview_metrics.get('user_count', 'N/A'))
+        
+        col2.metric("Tổng Số Phim", overview_metrics.get('movie_count', 'N/A'))
+        
+        col3.metric("Lượt Đánh Giá", overview_metrics.get('rating_count', 'N/A'))
+        
+        label_rmse = f"Độ Chính Xác ({latest_run.get('winner_model', 'N/A')})"
+        rmse_val = latest_run.get('rmse', 'N/A')
+        
+        col4.metric(
+            label=label_rmse, 
+            value=rmse_val, 
+            delta="Model Tốt Nhất", # Dòng chữ nhỏ bên dưới
+            delta_color="off" # Màu xám trung tính
+        )
 
         st.divider()
-        CHART_HEIGHT = 300
 
         # HÀNG 2: PHÂN TÍCH DỮ LIỆU THÔ
         col_raw1, col_raw2 = st.columns(2)
         
         with col_raw1:
-            st.subheader("🍰 Phân Bố Thể Loại")
+            st.subheader("🔥 Top 10 Phim Phổ Biến")
             with st.container(border=True):
-                genre_data = load_genre_stats()
-                if genre_data:
-                    df_g = pd.DataFrame(genre_data).head(10)
-                    chart_g = alt.Chart(df_g).mark_bar(cornerRadiusTopRight=5).encode(
-                        x=alt.X('count:Q', title='Số lượng phim'),
-                        y=alt.Y('genre:N', sort='-x', title=None),
-                        color=alt.Color('count:Q', scale=alt.Scale(scheme='blues'), legend=None)
-                    ).properties(height=CHART_HEIGHT)
-                    st.altair_chart(chart_g, use_container_width=True)
+                top_movies = get_provider().get_top_rated_movies(limit=10)
+                if not top_movies.empty:
+                    chart_top = alt.Chart(top_movies).mark_bar(color='#2ecc71').encode(
+                        x=alt.X('count:Q', title='Lượt đánh giá'),
+                        y=alt.Y('title:N', sort='-x', title=None),
+                        tooltip=['title', 'count']
+                    ).properties(height=300)
+                    st.altair_chart(chart_top, use_container_width=True)
 
         with col_raw2:
             st.subheader("⭐ Phân Bố Điểm Đánh Giá")
@@ -159,59 +145,47 @@ def main():
                     x=alt.X('rating:N', title='Số sao', axis=alt.Axis(labelAngle=0)), 
                     y=alt.Y('count:Q', title='Số lượt đánh giá'),
                     tooltip=['rating', 'count']
-                ).properties(height=CHART_HEIGHT)
+                ).properties(height=300)
                 st.altair_chart(chart_r, use_container_width=True)
 
         # HÀNG 3: KẾT QUẢ XỬ LÝ & HIỆU NĂNG
         col_res1, col_res2 = st.columns(2)
 
         with col_res1:
-            st.subheader("🔥 Top 10 Phim Phổ Biến")
-            with st.container(border=True):
-                top_movies = get_provider().get_top_rated_movies(limit=10)
-                if not top_movies.empty:
-                    chart_top = alt.Chart(top_movies).mark_bar(color='#2ecc71').encode(
-                        x=alt.X('count:Q', title='Lượt đánh giá'),
-                        y=alt.Y('title:N', sort='-x', title=None),
-                        tooltip=['title', 'count']
-                    ).properties(height=CHART_HEIGHT)
-                    st.altair_chart(chart_top, use_container_width=True)
-
-        with col_res2:
             st.subheader("🎯 Hiệu Năng Các Model")
             with st.container(border=True):
                 metrics = load_all_metrics()
                 if metrics:
                     df_m = pd.DataFrame(metrics)
+                    df_m = df_m[df_m['model'] != 'LATEST_RUN']
                     chart_m = alt.Chart(df_m).mark_line(point=True, color='#e74c3c').encode(
               
                         x=alt.X('model:N', title='Mô hình', axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('rmse:Q', title='$RMSE$', scale=alt.Scale(domain=[0.8, 1.2])),
-                    ).properties(height=CHART_HEIGHT)
+                    ).properties(height=300)
                     st.altair_chart(chart_m, use_container_width=True)
-                
-        # --- PHẦN XUẤT BÁO CÁO ---
-        st.divider()
-        st.subheader("📄 Báo Cáo Tổng Quan Hệ Thống")
-        
-        col_pdf, _ = st.columns([1, 2])
-        with col_pdf:
+
+        with col_res2:
+            st.subheader("📄 Báo Cáo Tổng Quan Hệ Thống")
             if st.button("🛠️ Khởi tạo dữ liệu PDF"):
-                # Thu thập dữ liệu hiện tại
-                current_metrics = load_all_metrics()
-                current_genres = load_genre_stats()
-                
+                # Load dữ liệu
+                metrics = load_all_metrics()
+                genres = load_genre_stats()
+                # Lưu ý: Hàm get_system_overview() trả về User/Movie count
+                sys_info = get_provider().get_system_overview() 
+
                 try:
-                    pdf_output = generate_pdf_report(current_metrics, current_genres)
+                    pdf_data = get_provider().generate_pdf_report(metrics, genres, sys_info)
+                    
                     st.download_button(
                         label="📥 Tải Báo cáo (PDF)",
-                        data=pdf_output,
-                        file_name=f"Bao_Cao_BigData_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        data=pdf_data,
+                        file_name=f"Bao_Cao_{datetime.now().strftime('%Y%m%d')}.pdf",
                         mime="application/pdf"
                     )
                 except Exception as e:
-                    st.error(f"Lỗi khi tạo PDF: {e}")
-                            
+                    st.error(f"Lỗi: {e}")
+        
     # ==========================================
     # TAB 1: USER VIEW (Gợi Ý)
     # ==========================================
@@ -221,7 +195,7 @@ def main():
         recs = [] 
         
         with col_top_left:
-            st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất.")
+            st.info("Nhập ID của bạn để nhận gợi ý phim phù hợp nhất")
             user_input = st.text_input("Nhập ID Người Dùng (User ID):", value="1")
             
             if not user_input:
@@ -352,7 +326,7 @@ def main():
         col_hist_left, col_hist_right = st.columns([1, 3])
         
         with col_hist_left:
-            st.info("Xem lại các phim người dùng đã xem.")
+            st.info("Xem lại các phim người dùng đã xem")
             hist_user_input = st.text_input("Nhập ID Người Dùng (History):", value="1")
             
             history_data = []
@@ -585,16 +559,18 @@ def main():
     # ==========================================
     with tab4:
         st.header("⚖️ So Sánh Hiệu Năng Các Model")
-        st.info("Biểu đồ so sánh RMSE và MAE của các mô hình đã huấn luyện (Dữ liệu từ HBase).")
+        st.info("Biểu đồ so sánh RMSE và MAE của các mô hình đã huấn luyện")
         
         metrics_data = load_all_metrics()
         if metrics_data:
             df_metrics = pd.DataFrame(metrics_data)
+            df_metrics = df_metrics[df_metrics['model'] != 'LATEST_RUN']
             
-            # Show raw metrics table first for visibility
+            # Show raw metrics table first for visibility      
             st.subheader("📋 Chi Tiết Số Liệu")
-            st.dataframe(df_metrics, use_container_width=True, hide_index=True)
-            
+            st.caption("Chi tiết đánh giá của từng loại mô hình")
+            st.dataframe(df_metrics, width='stretch', hide_index=True)
+                   
             st.divider()
             
             c1, c2 = st.columns(2)
@@ -618,34 +594,29 @@ def main():
                 ).properties(height=300)
                 st.altair_chart(mae_chart, use_container_width=True)
                 
-            st.divider()
-            
             # Phần dự đoán thủ công
             st.subheader("🔮 Dự Đoán Theo Model Tùy Chọn")
-            st.caption("Lấy kết quả pre-calculated từ HBase cho model được chọn.")
-            col_pred1, col_pred2 = st.columns([1, 2])
-            
-            with col_pred1:
-                selected_model = st.selectbox("Chọn Model để dự đoán:", ["als", "cbf", "hybrid"])
-                u_id = st.text_input("Nhập User ID để test:", value="1")
-                btn_predict = st.button("🚀 Chạy Dự Đoán")
+            st.caption("Lấy kết quả pre-calculated từ HBase cho model được chọn")
                 
-            with col_pred2:
-                if btn_predict:
-                    st.write(f"Kết quả dự đoán từ model **{selected_model.upper()}** cho User **{u_id}**:")
+            selected_model = st.selectbox("Chọn Model để dự đoán:", ["als", "cbf", "hybrid"])
+            u_id = st.text_input("Nhập User ID để test:", value="1")
+            btn_predict = st.button("🚀 Chạy Dự Đoán")
                     
-                    # Gọi get_recommendations với model_name
-                    test_recs = get_provider().get_recommendations(u_id, model_name=selected_model)
-                    
-                    if test_recs:
-                        st.success(f"Tìm thấy {len(test_recs)} phim gợi ý.")
-                        df_pred = pd.DataFrame(test_recs)
-                        st.dataframe(df_pred[["movieId", "title", "genres", "pred_rating"]].rename(columns={
-                            "movieId": "ID", "title": "Tên Phim", "genres": "Thể Loại", "pred_rating": "Điểm Dự Đoán"
-                        }), hide_index=True)
-                    else:
-                        st.warning(f"Không tìm thấy dữ liệu cho User {u_id} với model {selected_model.upper()}.")
-                        st.info("💡 Bạn có thể cần chạy pipeline training cho model này trước.")
+            if btn_predict:
+                st.write(f"Kết quả dự đoán từ model **{selected_model.upper()}** cho User **{u_id}**:")
+                        
+                # Gọi get_recommendations với model_name
+                test_recs = get_provider().get_recommendations(u_id, model_name=selected_model)
+                        
+                if test_recs:
+                    st.success(f"Tìm thấy {len(test_recs)} phim gợi ý.")
+                    df_pred = pd.DataFrame(test_recs)
+                    st.dataframe(df_pred[["movieId", "title", "genres", "avg_rating", "pred_rating"]].rename(columns={
+                        "movieId": "ID", "title": "Tên Phim", "genres": "Thể Loại", "avg_rating": "Điểm Cộng Đồng", "pred_rating": "Độ Phù Hợp"
+                    }), hide_index=True)
+                else:
+                    st.warning(f"Không tìm thấy dữ liệu cho User {u_id} với model {selected_model.upper()}.")
+                    st.info("💡 Bạn có thể cần chạy pipeline training cho model này trước.")
         else:
             st.warning("⚠️ Chưa có dữ liệu metrics trong HBase. Vui lòng chạy pipeline training.")
             

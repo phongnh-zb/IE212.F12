@@ -85,10 +85,11 @@ CSV Data → HDFS → MapReduce Jobs → Intermediate Results (HDFS) → Load to
 
 **Tính năng:**
 
-- **Gợi ý cá nhân:** Xem danh sách phim được gợi ý cho từng user cụ thể
-- **Phân tích người dùng:** Lịch sử đánh giá, thể loại yêu thích
-- **Thống kê hệ thống:** Biểu đồ phân bố thể loại, rating distribution, trending movies
-- **Tìm kiếm & Lọc:** Tìm phim theo mã người dùng, tên phim
+- **Tổng Quan (Home):** Dashboard hiển thị thông tin dự án và các con số thống kê tổng quan.
+- **Gợi Ý Cá Nhân (Recommendations):** Tra cứu ID người dùng và hiển thị danh sách phim được gợi ý (Top-K) cho người dùng đó.
+- **Lịch Sử Đánh Giá (User History):** Xem chi tiết lịch sử các phim đã xem và điểm đánh giá của một người dùng cụ thể.
+- **Dữ Liệu Hệ Thống (Analytics):** Biểu đồ trực quan hóa phân bố dữ liệu toàn hệ thống.
+- **So Sánh Model (Model Eval):** Bảng so sánh các chỉ số hiệu năng (RMSE, MAE) giữa các phiên bản mô hình đã huấn luyện.
 
 ---
 
@@ -110,6 +111,8 @@ IE212.F12/
 │   └── run_mapreduce.sh               # Submit các MapReduce jobs
 ├── src/
 │   ├── app.py                         # Entry point - Streamlit Web Application
+│   ├── fonts/
+│   │   ├── DejaVuSans.ttf             # Font DejaVuSans
 │   ├── hbase/
 │   │   ├── init_tables.py             # Khởi tạo/reset schema HBase
 │   │   ├── load_movies.py             # Load movies.csv → HBase
