@@ -85,7 +85,7 @@ def load_rating_distribution_from_csv(connection):
     description = "Phân Bố Rating Toàn Cục"
     csv_path = os.path.join(config.DATA_DIR_LOCAL, config.RATINGS_FILE)
     # Giả sử bạn đã định nghĩa HBASE_TABLE_RATING_STATS trong config
-    table_name = config.HBASE_TABLE_RATING_STATS 
+    table_name = config.HBASE_TABLE_RATING_STATS
     row_key = b'GLOBAL_DIST'
     cf = b'info'
 
@@ -108,9 +108,9 @@ def load_rating_distribution_from_csv(connection):
         df = pd.read_csv(csv_path, usecols=['rating'])
         # Đếm số lượng (value_counts) và sắp xếp theo index (mức rating)
         rating_counts = df['rating'].value_counts().sort_index()
-        
+
         print(f"   -> Đã tính xong. Tìm thấy {len(rating_counts)} mức rating khác nhau.")
-        
+
         # 4. Chuẩn bị dữ liệu để Put vào HBase
         table = connection.table(table_name)
         hbase_data = {}
@@ -133,9 +133,9 @@ def load_system_overview_from_csv(connection):
     description = "Tổng Quan Hệ Thống (Users, Movies, Ratings)"
     movies_csv_path = os.path.join(config.DATA_DIR_LOCAL, config.MOVIES_FILE)
     ratings_csv_path = os.path.join(config.DATA_DIR_LOCAL, config.RATINGS_FILE)
-    
+
     # CẦN ĐẢM BẢO BIẾN NÀY CÓ TRONG FILE CONFIG CỦA BẠN
-    table_name = config.HBASE_TABLE_SYSTEM_STATS 
+    table_name = config.HBASE_TABLE_SYSTEM_STATS
     row_key = b'OVERVIEW'
     cf = b'info'
 
@@ -153,7 +153,7 @@ def load_system_overview_from_csv(connection):
 
     try:
         print("   -> Đang đọc CSV và tính toán tổng quan bằng Pandas...")
-        
+
         # a. Đếm số phim (Chỉ cần đọc 1 cột bất kỳ để đếm dòng)
         movies_df = pd.read_csv(movies_csv_path, usecols=['movieId'])
         movie_count = len(movies_df)
@@ -168,7 +168,7 @@ def load_system_overview_from_csv(connection):
 
         # 3. Chuẩn bị dữ liệu để Put vào HBase
         table = connection.table(table_name)
-        
+
         # Dữ liệu phải được encode sang bytes
         data_to_put = {
             f'{cf.decode()}:user_count'.encode(): str(user_count).encode(),
@@ -179,12 +179,53 @@ def load_system_overview_from_csv(connection):
         # 4. Thực hiện 1 lệnh Put duy nhất
         print(f"   -> Đang ghi dữ liệu vào bảng '{table_name}' với RowKey '{row_key.decode()}'...")
         table.put(row_key, data_to_put)
-        
+
         print(f"✅ HOÀN TẤT '{description}'!")
 
     except Exception as e:
         print(f"❌ Lỗi khi tính toán tổng quan hoặc ghi HBase: {e}")
 
+
+def load_genre_stats(connection):
+    """Nạp kết quả thống kê thể loại từ HDFS vào bảng genre_stats"""
+    print(f"\n🚀 Bắt đầu nạp 'Thống Kê Thể Loại' từ: {config.HDFS_OUTPUT_GENRES}")
+
+    table = connection.table(config.HBASE_TABLE_GENRE_STATS)
+    hdfs_cmd = f"hdfs dfs -cat {config.HDFS_OUTPUT_GENRES}/part-*"
+
+    try:
+        process = subprocess.Popen(hdfs_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        batch = table.batch(batch_size=100)
+        count = 0
+
+        for line in process.stdout:
+            try:
+                line_str = line.decode('utf-8').strip()
+                if not line_str: continue
+
+                parts = line_str.split('\t')
+                if len(parts) < 2:
+                    parts = line_str.split(',')
+
+                if len(parts) >= 2:
+                    genre = parts[0].strip()
+                    count_val = parts[1].strip()
+
+                    batch.put(genre.encode(), {
+                        b'info:count': count_val.encode()
+                    })
+                    count += 1
+
+            except Exception as e:
+                print(f"Lỗi xử lý dòng: {e}")
+                continue
+
+        batch.send()
+        print(f"✅ HOÀN TẤT 'Thống Kê Thể Loại'! Tổng cộng: {count} thể loại.")
+
+    except Exception as e:
+        print(f"❌ Lỗi khi đọc HDFS: {e}")
 
 def main():
     # Tạo kết nối một lần và dùng chung
@@ -214,9 +255,13 @@ def main():
         # --- CÁC JOB MỚI (Đọc từ CSV Local để thống kê nhanh) ---
         # 3. NẠP RATING DISTRIBUTION
         load_rating_distribution_from_csv(conn)
-        
+
         # 4. NẠP SYSTEM OVERVIEW (MỚI THÊM)
         load_system_overview_from_csv(conn)
+
+        # 3. NẠP GENRE STATS (Phân bố thể loại)
+        # MapReduce Job: Count Genres
+        load_genre_stats(conn)
 
     finally:
         # Luôn đóng kết nối cuối cùng

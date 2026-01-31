@@ -139,15 +139,17 @@ def run_training_and_evaluate(spark, model_type, df_ratings, df_movies):
 
 def main(args_model):
     spark = SparkSession.builder \
-        .appName("MovieLens_10M_Pipeline") \
+        .appName("MovieLens_Pipeline") \
         .master("local[*]") \
-        .config("spark.driver.memory", "6g") \
-        .config("spark.executor.memory", "6g") \
-        .config("spark.driver.maxResultSize", "2g") \
-        .config("spark.sql.shuffle.partitions", "500") \
-        .config("spark.default.parallelism", "500") \
+        .config("spark.driver.memory", "3g") \
+        .config("spark.executor.memory", "3g") \
+        .config("spark.driver.maxResultSize", "1g") \
+        .config("spark.sql.shuffle.partitions", "200") \
+        .config("spark.default.parallelism", "200") \
         .config("spark.memory.offHeap.enabled", "true") \
-        .config("spark.memory.offHeap.size", "2g") \
+        .config("spark.memory.offHeap.size", "1g") \
+        .config("spark.executor.extraJavaOptions", "-XX:+UseG1GC") \
+        .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC") \
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
@@ -187,8 +189,8 @@ def main(args_model):
     # Chia 80/20 dùng chung cho tất cả các model để so sánh công bằng
     print("\n>>> [DATA] Splitting Data 80/20 for Evaluation...")
     train_df, test_df = df_ratings.randomSplit([0.8, 0.2], seed=42)
-    train_df = train_df.cache()
-    test_df = test_df.cache()
+    train_df = train_df.cache()  # Cache train data (needed for recommendations)
+    # test_df = test_df.cache()  # Skip caching test to save memory
     print(f">>> Train Size: {train_df.count()}, Test Size: {test_df.count()}")
 
     models_to_run = ["als", "cbf", "hybrid"] if args_model == "all" else [args_model]
