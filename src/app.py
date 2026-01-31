@@ -80,7 +80,14 @@ def load_latest_run_info():
 # --- UI MAIN ---
 def main():
     st.title("🎬 Hệ thống gợi ý phim thông minh sử dụng Big Data")
-    st.caption("Phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa.")
+    
+    col_t1, col_t2 = st.columns([4, 1])
+    with col_t1:
+        st.caption("Phân tích hành vi người dùng và đưa ra các đề xuất điện ảnh cá nhân hóa.")
+    with col_t2:
+        if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
     # TABS
     tab0, tab1, tab2, tab3, tab4 = st.tabs(["🏠 Tổng Quan", "🔍 Gợi Ý Cá Nhân", "📜 Lịch Sử Đánh Giá", "📊 Dữ Liệu Hệ Thống", "⚖️ So Sánh Model"])
@@ -158,12 +165,18 @@ def main():
                 if metrics:
                     df_m = pd.DataFrame(metrics)
                     df_m = df_m[df_m['model'] != 'LATEST_RUN']
-                    chart_m = alt.Chart(df_m).mark_line(point=True, color='#e74c3c').encode(
-              
-                        x=alt.X('model:N', title='Mô hình', axis=alt.Axis(labelAngle=0)),
-                        y=alt.Y('rmse:Q', title='$RMSE$', scale=alt.Scale(domain=[0.8, 1.2])),
-                    ).properties(height=300)
-                    st.altair_chart(chart_m, use_container_width=True)
+                    
+                    if not df_m.empty:
+                        chart_m = alt.Chart(df_m).mark_line(point=True, color='#e74c3c').encode(
+                            x=alt.X('model:N', title='Mô hình', axis=alt.Axis(labelAngle=0)),
+                            y=alt.Y('rmse:Q', title='$RMSE$', scale=alt.Scale(zero=False)),
+                            tooltip=['model', 'rmse']
+                        ).properties(height=300)
+                        st.altair_chart(chart_m, use_container_width=True)
+                    else:
+                        st.info("💡 Chưa có số liệu so sánh. Hãy huấn luyện thêm mô hình.")
+                else:
+                    st.warning("⚠️ Không tìm thấy dữ liệu metrics.")
 
         with col_res2:
             st.subheader("📄 Báo Cáo Tổng Quan Hệ Thống")

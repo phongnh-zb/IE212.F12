@@ -18,6 +18,7 @@ from configs import config
 from src.models.als_recommender import ALSRecommender
 from src.models.content_based_recommender import ContentBasedRecommender
 from src.models.hybrid_recommender import HybridRecommender
+from src.utils.hbase_utils import load_all_data_from_hbase
 
 # ==============================================================================
 # 1. CÁC HÀM WORKER
@@ -141,47 +142,39 @@ def main(args_model):
     spark = SparkSession.builder \
         .appName("MovieLens_Pipeline") \
         .master("local[*]") \
-        .config("spark.driver.memory", "3g") \
-        .config("spark.executor.memory", "3g") \
+        .config("spark.driver.memory", "6g") \
+        .config("spark.executor.memory", "6g") \
         .config("spark.driver.maxResultSize", "1g") \
         .config("spark.sql.shuffle.partitions", "200") \
         .config("spark.default.parallelism", "200") \
         .config("spark.memory.offHeap.enabled", "true") \
-        .config("spark.memory.offHeap.size", "1g") \
+        .config("spark.memory.offHeap.size", "2g") \
         .config("spark.executor.extraJavaOptions", "-XX:+UseG1GC") \
         .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC") \
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
-    # Load Data
-    data_dir = os.path.join(project_root, 'data')
-    ratings_path = f"file://{os.path.join(data_dir, config.RATINGS_FILE)}"
-    movies_path = f"file://{os.path.join(data_dir, config.MOVIES_FILE)}"
-    
+    # Load Data from hbase
 
-    print(f"📂 Ratings: {ratings_path}")
-    print(f"📂 Movies:  {movies_path}")
-    
-    if not os.path.exists(os.path.join(data_dir, config.RATINGS_FILE)):
-        print(f"❌ ERROR: Không tìm thấy file data")
+    print("\n>>> [DATA] loading data from hbase...")
+
+    df_ratings, df_movies, df_tags = load_all_data_from_hbase(spark)
+    if df_ratings is None or df_movies is None:
+        print("ERROR: khong the load data tu hbase")
+        print("Hay chay ./run_pupeline.sh")
+        spark.stop()
         return
 
-    schema_ratings = StructType([
-        StructField("userId", IntegerType()), 
-        StructField("movieId", IntegerType()), 
-        StructField("rating", FloatType()), 
-        StructField("timestamp", LongType())
-    ])
-    df_ratings = spark.read.csv(ratings_path, header=True, schema=schema_ratings).cache()
+    df_ratings = df_ratings.cache()
+    df_movies = df_movies.cache()
+    if df_tags is not None:
+        df_tags = df_tags.cache()
 
-    schema_movies = StructType([
-        StructField("movieId", IntegerType()),
-        StructField("title", StringType()),
-        StructField("genres", StringType())
-    ])
-    df_movies = spark.read.csv(movies_path, header=True, schema=schema_movies).cache()
-    
-    print(f">>> Data Loaded. Ratings: {df_ratings.count()}, Movies: {df_movies.count()}")
+    tags_count = df_tags.count() if df_tags is not None else 0
+    print(f"\n>>> Data loaded successfully from hbase...")
+    print(f"    Ratings:    {df_ratings.count():,}")
+    print(f"    Movies:     {df_movies.count():,}")
+    print(f"    Tags:       {tags_count:,}")
 
     # --- LOGIC CHẠY TỐI ƯU ---
     
@@ -218,7 +211,7 @@ def main(args_model):
             
         elif m_name == "cbf":
             recommender = ContentBasedRecommender(spark)
-            recommender.train(train_df, df_movies)
+            recommender.train(train_df, df_movies, df_tags)
             metrics = recommender.evaluate(test_df)
             trained_models["cbf"] = recommender
             
@@ -232,7 +225,7 @@ def main(args_model):
                 
             # Train (skip sub-models if injected)
             train_sub = "als" not in trained_models or "cbf" not in trained_models
-            recommender.train(train_df, df_movies, train_submodels=train_sub)
+            recommender.train(train_df, df_movies, df_tags, train_submodels=train_sub)
             
             metrics = recommender.evaluate(test_df)
             trained_models["hybrid"] = recommender

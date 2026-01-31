@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 
 import happybase
+import pandas as pd
 from fpdf import FPDF
 
 # --- SETUP PATH ---
@@ -12,6 +13,208 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(project_root)
 
 from configs import config
+
+
+def load_ratings_from_hbase(spark):
+
+    from pyspark.sql.types import StructType, StructField, IntegerType, FloatType, LongType
+    print("[HBASE] loading rating....")
+    connection = None
+    BATCH_SIZE = 10000
+    schema = StructType([
+        StructField("userId", IntegerType(), True),
+        StructField("movieId", IntegerType(), True),
+        StructField("rating", FloatType(), True),
+        StructField("timestamp", LongType(), True),
+    ])
+    try:
+        connection = happybase.Connection(host=config.HBASE_HOST, timeout=60000)
+        table = connection.table(config.HBASE_TABLE_RATINGS)
+        all_dfs = []
+        batch_data = []
+        user_count = 0
+        total_ratings = 0
+
+        for row_key, row_data in table.scan():
+            user_id = int(row_key.decode('utf-8'))
+
+            for col_key, col_val in row_data.items():
+                col_family, col_qualifier = col_key.split(b':', 1)
+
+                if col_family == b'r':
+                    movie_id = int(col_qualifier.decode('utf-8'))
+                    rating = float(col_val.decode('utf-8'))
+
+                    ts_key = b't:' + col_qualifier
+                    timestamp = int(row_data.get(ts_key, b'0').decode('utf-8'))
+
+                    batch_data.append((user_id, movie_id, rating, timestamp))
+                    total_ratings += 1
+            user_count += 1
+
+            if user_count % BATCH_SIZE == 0:
+                if batch_data:
+                    batch_df = spark.createDataFrame(batch_data, schema)
+                    all_dfs.append(batch_df)
+                    batch_data = []
+                print(f'    ->Processed {user_count:,} users, {total_ratings:,} ratings...')
+        if batch_data:
+            batch_df = spark.createDataFrame(batch_data, schema)
+            all_dfs.append(batch_df)
+
+        connection.close()
+
+        if not all_dfs:
+            print("[Hbase] no rating found")
+            return None
+
+        print(f'    -> Merging {len(all_dfs)} batches...')
+        result_df = all_dfs[0]
+        for df in all_dfs[1:]:
+            result_df = result_df.union(df)
+
+        print(f"Hbase - loaded {total_ratings:,} ratings")
+        return result_df
+    except Exception as e:
+        print(f"Hbase error - load_rating {e}")
+        if connection:
+            connection.close()
+        return None
+
+def load_movies_from_hbase(spark):
+    print("Hbase - loading movies...")
+    connection = None
+    try:
+        connection = happybase.Connection(host=config.HBASE_HOST, timeout=30000)
+        table = connection.table(config.HBASE_TABLE_MOVIES)
+        data = []
+        for row_key, row_data in table.scan():
+            movie_id = int(row_key.decode('utf-8'))
+            title = row_data.get(b'info:title', b'Unknown').decode('utf-8')
+            genres = row_data.get(b'info:genres', b'').decode('utf-8')
+
+            data.append({
+                'movieId': movie_id,
+                'title': title,
+                'genres': genres
+            })
+        connection.close()
+
+        if not data:
+            print("Hbase - No movies found")
+            return None
+
+        pdf = pd.DataFrame(data)
+        df = spark.createDataFrame(pdf)
+        print(f"Hbase - loaded {len(pdf)} movies")
+        return df
+    except Exception as e:
+        print(f"HBase error - load_movie {e}")
+        if connection:
+            connection.close()
+        return None
+
+
+def load_tags_from_hbase(spark):
+
+    from pyspark.sql.types import StructType, StructField, IntegerType, StringType, LongType
+
+    print("Hbase - loading tags...")
+    connection = None
+    BATCH_SIZE = 50000
+    schema = StructType([
+        StructField("userId", IntegerType(), True),
+        StructField("movieId", IntegerType(), True),
+        StructField("tag", StringType(), True),
+        StructField("timestamp", LongType(), True),
+    ])
+
+    try:
+        connection = happybase.Connection(host=config.HBASE_HOST, timeout=60000)
+        table = connection.table(config.HBASE_TABLE_TAGS)
+
+        all_dfs = []
+        batch_data = []
+        total_tags = 0
+
+        for row_key, row_data in table.scan():
+            key_str = row_key.decode('utf-8')
+
+            user_id = None
+            movie_id = None
+            tag = None
+            timestamp = 0
+
+            if b'info:userId' in row_data:
+                user_id = int(row_data.get(b'info:userId', b'').decode('utf-8'))
+                movie_id = int(row_data.get(b'info:movieId', b'0').decode('utf-8'))
+                tag = row_data.get(b'info:tag', b'').decode('utf-8')
+                timestamp = int(row_data.get(b'info:timestamp', b'0').decode('utf-8'))
+            elif '_' in key_str:
+                parts = key_str.split('_')
+                if len(parts) >= 2:
+                    user_id = int(parts[0])
+                    movie_id = int(parts[1])
+                    tag = row_data.get(b'info:tag', b'').decode('utf-8')
+                    timestamp = int(row_data.get(b'info:timestamp', b'0').decode('utf-8'))
+                else:
+                    continue
+
+            else:
+                user_id = int(key_str)
+                for col_key, col_val in row_data.items():
+                    if col_key.startswith(b'tag:'):
+                        movie_id = int(col_key.split(b':')[1].decode('utf-8'))
+                        tag = col_val.decode('utf-8')
+                        timestamp = 0
+
+                        if tag:
+                            batch_data.append((user_id, movie_id, tag, timestamp))
+                            total_tags += 1
+                continue
+
+            if tag:
+                batch_data.append((user_id, movie_id, tag, timestamp))
+                total_tags += 1
+
+            if total_tags > 0 and total_tags % BATCH_SIZE == 0:
+                batch_df = spark.createDataFrame(batch_data, schema)
+                all_dfs.append(batch_df)
+                batch_data = []
+                print(f'    ->Processed {total_tags:,} tags...')
+        if batch_data:
+            batch_df = spark.createDataFrame(batch_data, schema)
+            all_dfs.append(batch_df)
+        connection.close()
+
+        if not all_dfs:
+            print("Hbase - No tags found")
+            return None
+
+        print(f"    -> Merging {len(all_dfs)} batches...")
+
+        result_df = all_dfs[0]
+        for df in all_dfs[1:]:
+            result_df = result_df.union(df)
+
+        print(f"    Loaded {total_tags:,} tags")
+
+        return result_df
+    except Exception as e:
+        print(f"HBase error - load_tags {e}")
+        if connection:
+            connection.close()
+        return None
+
+
+def load_all_data_from_hbase(spark):
+    print(f"Hbase - loading all data...")
+    print("\n" + "-" * 50)
+    df_ratings = load_ratings_from_hbase(spark)
+    df_movies = load_movies_from_hbase(spark)
+    df_tags = load_tags_from_hbase(spark)
+
+    return df_ratings, df_movies, df_tags
 
 
 class HBaseProvider:
@@ -294,24 +497,44 @@ class HBaseProvider:
     def get_all_model_metrics(self):
         """
         Lấy tất cả metrics của các model để hiển thị dashboard.
+        Tự động xử lý lỗi dữ liệu và fallback giữa các column families.
         """
         self.connect()
         results = []
         try:
             with self.pool.connection() as connection:
-                # Kiểm tra xem bảng có tồn tại không
                 tables = [t.decode('utf-8') for t in connection.tables()]
                 if config.HBASE_TABLE_MODEL_METRICS not in tables:
                     return []
                 
                 table = connection.table(config.HBASE_TABLE_MODEL_METRICS)
                 for key, data in table.scan():
-                    results.append({
-                        "model": key.decode('utf-8'),
-                        "rmse": float(data.get(b'info:rmse', b'0').decode('utf-8')),
-                        "mae": float(data.get(b'info:mae', b'0').decode('utf-8')),
-                        "updated_at": data.get(b'info:updated_at', b'--').decode('utf-8')
-                    })
+                    model_name = key.decode('utf-8')
+                    
+                    # Helper lấy giá trị an toàn từ nhiều family
+                    def get_safe_val(col_name, default='0'):
+                        # Ưu tiên lấy từ 'info' (cho các model lẻ), sau đó thử 'b' (cho LATEST_RUN)
+                        val = data.get(f'info:{col_name}'.encode())
+                        if val is None:
+                            val = data.get(f'b:{col_name}'.encode())
+                        return val.decode('utf-8') if val else default
+
+                    try:
+                        rmse_val = float(get_safe_val('rmse'))
+                        mae_val = float(get_safe_val('mae'))
+                        updated_at = get_safe_val('updated_at', '--')
+                        if updated_at == '--': # Thử lấy timestamp nếu là LATEST_RUN
+                            updated_at = get_safe_val('timestamp', '--')
+
+                        results.append({
+                            "model": model_name,
+                            "rmse": rmse_val,
+                            "mae": mae_val,
+                            "updated_at": updated_at
+                        })
+                    except (ValueError, TypeError) as conv_err:
+                        print(f"⚠️ [HBase] Lỗi chuyển đổi data cho model {model_name}: {conv_err}")
+                        continue
             return results
         except Exception as e:
             print(f"!!! [HBase Error - get_all_model_metrics] {e}")

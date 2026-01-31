@@ -1,5 +1,7 @@
 from pyspark.sql.functions import (avg, col, collect_list, count, desc, explode,
-                                   row_number, struct, when)
+                                   row_number, struct, when, udf)
+from pyspark.sql.types import FloatType
+import numpy as np
 from pyspark.sql.window import Window
 
 from src.models.als_recommender import ALSRecommender
@@ -19,13 +21,13 @@ class HybridRecommender:
         # Biến lưu danh sách phim "hợp lệ" (Quality Filter)
         self.valid_movies_df = None
 
-    def train(self, df_ratings, df_movies, train_submodels=True):
+    def train(self, df_ratings, df_movies, df_tags=None, train_submodels=True):
         if train_submodels:
             print("   -> [Hybrid] Training Sub-models...")
             # 1. Train ALS
             self.als.train(df_ratings)
-            # 2. Train CBF
-            self.cbf.train(df_ratings, df_movies)
+            # 2. Train CBF (voi TF-IDF)
+            self.cbf.train(df_ratings, df_movies, df_tags)
         else:
             print("   -> [Hybrid] Using pre-trained sub-models (Skipping re-training).")
         
@@ -43,31 +45,47 @@ class HybridRecommender:
     def evaluate(self, test_data):
         from pyspark.ml.evaluation import RegressionEvaluator
         print("   [Hybrid] Đang đánh giá trên tập Test...")
-        
+        # Tối ưu: Sample 10% test data
+        test_sampled = test_data.sample(False, 0.1, seed=42)
+
         # 1. ALS Prediction
         try:
-            als_preds = self.als.best_model.transform(test_data).select(
+            als_preds = self.als.best_model.transform(test_sampled).select(
                 col("userId"), col("movieId"), col("prediction").alias("pred_als")
             )
         except Exception as e:
              print(f"   [Hybrid] Lỗi khi dự đoán bằng ALS: {e}. Sử dụng giá trị mặc định.")
-             als_preds = test_data.select(col("userId"), col("movieId"), when(col("userId").isNotNull(), 3.0).alias("pred_als"))
+             als_preds = test_sampled.select(col("userId"), col("movieId"), when(col("userId").isNotNull(), 3.0).alias("pred_als"))
 
         # 2. CBF Prediction
-        test_with_profile = test_data.join(self.cbf.user_profiles, "userId", "left")
-        cbf_preds = test_with_profile.join(self.cbf.movie_profiles, 
-            (test_with_profile.movieId == self.cbf.movie_profiles.movieId) & 
-            (test_with_profile.top_genre == self.cbf.movie_profiles.genre), 
-            "left") \
-            .select(
-                test_with_profile["userId"], 
-                test_with_profile["movieId"], 
-                col("avg_rating").alias("pred_cbf")
-            ).groupBy(test_with_profile["userId"], test_with_profile["movieId"]).agg(avg("pred_cbf").alias("pred_cbf")).na.fill(3.0)
+        @udf(FloatType())
+        def cosine_similarity_hybrid(vec1, vec2):
+            if vec1 is None or vec2 is None:
+                return 3.0
+            v1 = np.array(vec1) if isinstance(vec1, list) else vec1.toArray()
+            v2 = np.array(vec2) if isinstance(vec2, list) else vec2.toArray()
+            dot = float(np.dot(v1, v2))
+            norm1 = float(np.linalg.norm(v1))
+            norm2 = float(np.linalg.norm(v2))
+            if norm1 == 0 or norm2 == 0:
+                return 3.0
+            sim = dot / (norm1 * norm2)
+            return 1.0 + sim * 4.0
+        from pyspark.sql.functions import broadcast
+        test_with_user = test_sampled.join(self.cbf.user_profiles, "userId", "left")
+        test_with_all = test_with_user.join(
+            broadcast(self.cbf.movie_features.select("movieId", "tfidf_features")),
+            "movieId", "left"
+        )
+
+        cbf_preds = test_with_all.withColumn(
+            "pred_cbf",
+            cosine_similarity_hybrid(col("user_vector"), col("tfidf_features"))
+        ).select("userId", "movieId", "pred_cbf").na.fill(3.0)
 
         # 3. Combine
-        combined = test_data.join(als_preds, ["userId", "movieId"], "left") \
-                            .join(cbf_preds, ["userId", "movieId"], "left")
+        combined = test_sampled.join(als_preds, ["userId", "movieId"], "left") \
+                               .join(cbf_preds, ["userId", "movieId"], "left")
                             
         final_preds = combined.withColumn("prediction", 
             when(col("pred_als").isNotNull() & col("pred_cbf").isNotNull(), 
